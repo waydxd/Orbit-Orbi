@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Example calendar service (replace with your actual service)
+  calendar-service:
+    image: your-calendar-service:latest
+    ports:
+      - "50051:50051"
+    environment:
+      - SERVICE_PORT=50051
+    networks:
+      - orbi-network
+
+  # Orbi chatbot
+  orbi:
+    build: .
+    depends_on:
+      - calendar-service
+    environment:
+      - CALENDAR_SERVICE_ADDR=calendar-service:50051
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
+    stdin_open: true
+    tty: true
+    networks:
+      - orbi-network
+
+networks:
+  orbi-network:
+    driver: bridge
