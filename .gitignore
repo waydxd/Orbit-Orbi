@@ -31,5 +31,11 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# macOS system files
+.DS_Store
+
+# Docker tar for CSE Compute
+docker.tar
