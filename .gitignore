@@ -39,3 +39,6 @@ go.work.sum
 
 # Docker tar for CSE Compute
 docker.tar
+
+# Obsidian vault files
+.obsidian/
