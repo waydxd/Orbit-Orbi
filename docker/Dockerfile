@@ -1,3 +1,5 @@
+# Dockerfile for vLLM GPU Worker
+# This container runs both vLLM inference server and the job worker process
 FROM vllm/vllm-openai:latest
 
 # Install Python dependencies for worker

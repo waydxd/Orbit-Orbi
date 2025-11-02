@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  # Redis message broker
+  redis:
+    image: redis:7-alpine
+    container_name: orbi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - orbi-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # Example calendar service (replace with your actual service)
   calendar-service:
     image: your-calendar-service:latest
@@ -11,20 +28,63 @@ services:
     networks:
       - orbi-network
 
-  # Orbi chatbot
+  # vLLM GPU Worker
+  vllm-worker:
+    build:
+      context: ./vLLM
+      dockerfile: Dockerfile
+    container_name: orbi-vllm-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - VLLM_URL=http://localhost:8000/v1/completions
+      - WORKER_ID=worker-1
+      - MODEL=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+      - PORT=8000
+    ports:
+      - "8000:8000"  # vLLM API port
+    networks:
+      - orbi-network
+    # GPU support (uncomment if using GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    volumes:
+      - vllm-cache:/root/.cache
+    restart: unless-stopped
+
+  # Orbi chatbot (Go service)
   orbi:
     build: .
+    container_name: orbi-chatbot
     depends_on:
       - calendar-service
+      - redis
+      - vllm-worker
     environment:
       - CALENDAR_SERVICE_ADDR=calendar-service:50051
+      - REDIS_URL=redis://redis:6379/0
+      - VLLM_API_URL=http://vllm-worker:8000/v1/completions
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
     stdin_open: true
     tty: true
     networks:
       - orbi-network
+    ports:
+      - "8080:8080"  # Web server port (if applicable)
+
+volumes:
+  redis-data:
+  vllm-cache:
 
 networks:
   orbi-network:
     driver: bridge
+
