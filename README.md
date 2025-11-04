@@ -2,6 +2,8 @@
 
 Orbi is a practice. Orbi is a state of being. Orbi is the pinnacle of human experience.
 
+> NOTE: Documentation has been consolidated. See `DOC_SUMMARY.md` for a single canonical overview (architecture, implementation, deployment and examples).
+
 ## Overview
 
 Orbi is an intelligent agentic chatbot module for smart calendar management, built with Go. It leverages langchain-go for natural language processing and communicates with calendar services via gRPC.

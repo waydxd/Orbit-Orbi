@@ -825,6 +825,234 @@ func (x *GetAvailableSlotsResponse) GetMessage() string {
 	return ""
 }
 
+// ProcessMessageRequest contains a user message for the agent to process
+type ProcessMessageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Optional session ID for context tracking
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessMessageRequest) Reset() {
+	*x = ProcessMessageRequest{}
+	mi := &file_proto_calendar_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessMessageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessMessageRequest) ProtoMessage() {}
+
+func (x *ProcessMessageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_calendar_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessMessageRequest.ProtoReflect.Descriptor instead.
+func (*ProcessMessageRequest) Descriptor() ([]byte, []int) {
+	return file_proto_calendar_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ProcessMessageRequest) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ProcessMessageRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+// ProcessMessageResponse contains the agent's response to a user message
+type ProcessMessageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Response      string                 `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	SessionId     string                 `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProcessMessageResponse) Reset() {
+	*x = ProcessMessageResponse{}
+	mi := &file_proto_calendar_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProcessMessageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProcessMessageResponse) ProtoMessage() {}
+
+func (x *ProcessMessageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_calendar_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProcessMessageResponse.ProtoReflect.Descriptor instead.
+func (*ProcessMessageResponse) Descriptor() ([]byte, []int) {
+	return file_proto_calendar_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ProcessMessageResponse) GetResponse() string {
+	if x != nil {
+		return x.Response
+	}
+	return ""
+}
+
+func (x *ProcessMessageResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ProcessMessageResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *ProcessMessageResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+// GetAgentStateRequest requests the current state of the agent
+type GetAgentStateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAgentStateRequest) Reset() {
+	*x = GetAgentStateRequest{}
+	mi := &file_proto_calendar_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAgentStateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAgentStateRequest) ProtoMessage() {}
+
+func (x *GetAgentStateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_calendar_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAgentStateRequest.ProtoReflect.Descriptor instead.
+func (*GetAgentStateRequest) Descriptor() ([]byte, []int) {
+	return file_proto_calendar_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetAgentStateRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+// GetAgentStateResponse contains the agent's current state
+type GetAgentStateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ready         bool                   `protobuf:"varint,1,opt,name=ready,proto3" json:"ready,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAgentStateResponse) Reset() {
+	*x = GetAgentStateResponse{}
+	mi := &file_proto_calendar_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAgentStateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAgentStateResponse) ProtoMessage() {}
+
+func (x *GetAgentStateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_calendar_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAgentStateResponse.ProtoReflect.Descriptor instead.
+func (*GetAgentStateResponse) Descriptor() ([]byte, []int) {
+	return file_proto_calendar_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetAgentStateResponse) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *GetAgentStateResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *GetAgentStateResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_proto_calendar_proto protoreflect.FileDescriptor
 
 const file_proto_calendar_proto_rawDesc = "" +
@@ -892,13 +1120,33 @@ const file_proto_calendar_proto_rawDesc = "" +
 	"\x19GetAvailableSlotsResponse\x12(\n" +
 	"\x05slots\x18\x01 \x03(\v2\x12.calendar.TimeSlotR\x05slots\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"P\n" +
+	"\x15ProcessMessageRequest\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"\x83\x01\n" +
+	"\x16ProcessMessageResponse\x12\x1a\n" +
+	"\bresponse\x18\x01 \x01(\tR\bresponse\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\"5\n" +
+	"\x14GetAgentStateRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"_\n" +
+	"\x15GetAgentStateResponse\x12\x14\n" +
+	"\x05ready\x18\x01 \x01(\bR\x05ready\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage2\x99\x03\n" +
 	"\x0fCalendarService\x12J\n" +
 	"\vCreateEvent\x12\x1c.calendar.CreateEventRequest\x1a\x1d.calendar.CreateEventResponse\x12D\n" +
 	"\tGetEvents\x12\x1a.calendar.GetEventsRequest\x1a\x1b.calendar.GetEventsResponse\x12J\n" +
 	"\vUpdateEvent\x12\x1c.calendar.UpdateEventRequest\x1a\x1d.calendar.UpdateEventResponse\x12J\n" +
 	"\vDeleteEvent\x12\x1c.calendar.DeleteEventRequest\x1a\x1d.calendar.DeleteEventResponse\x12\\\n" +
-	"\x11GetAvailableSlots\x12\".calendar.GetAvailableSlotsRequest\x1a#.calendar.GetAvailableSlotsResponseB-Z+github.com/waydxd/Orbit-Orbi/proto/calendarb\x06proto3"
+	"\x11GetAvailableSlots\x12\".calendar.GetAvailableSlotsRequest\x1a#.calendar.GetAvailableSlotsResponse2\xb5\x01\n" +
+	"\fAgentService\x12S\n" +
+	"\x0eProcessMessage\x12\x1f.calendar.ProcessMessageRequest\x1a .calendar.ProcessMessageResponse\x12P\n" +
+	"\rGetAgentState\x12\x1e.calendar.GetAgentStateRequest\x1a\x1f.calendar.GetAgentStateResponseB-Z+github.com/waydxd/Orbit-Orbi/proto/calendarb\x06proto3"
 
 var (
 	file_proto_calendar_proto_rawDescOnce sync.Once
@@ -912,7 +1160,7 @@ func file_proto_calendar_proto_rawDescGZIP() []byte {
 	return file_proto_calendar_proto_rawDescData
 }
 
-var file_proto_calendar_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_proto_calendar_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_proto_calendar_proto_goTypes = []any{
 	(*Event)(nil),                     // 0: calendar.Event
 	(*CreateEventRequest)(nil),        // 1: calendar.CreateEventRequest
@@ -926,6 +1174,10 @@ var file_proto_calendar_proto_goTypes = []any{
 	(*GetAvailableSlotsRequest)(nil),  // 9: calendar.GetAvailableSlotsRequest
 	(*TimeSlot)(nil),                  // 10: calendar.TimeSlot
 	(*GetAvailableSlotsResponse)(nil), // 11: calendar.GetAvailableSlotsResponse
+	(*ProcessMessageRequest)(nil),     // 12: calendar.ProcessMessageRequest
+	(*ProcessMessageResponse)(nil),    // 13: calendar.ProcessMessageResponse
+	(*GetAgentStateRequest)(nil),      // 14: calendar.GetAgentStateRequest
+	(*GetAgentStateResponse)(nil),     // 15: calendar.GetAgentStateResponse
 }
 var file_proto_calendar_proto_depIdxs = []int32{
 	0,  // 0: calendar.CreateEventResponse.event:type_name -> calendar.Event
@@ -937,13 +1189,17 @@ var file_proto_calendar_proto_depIdxs = []int32{
 	5,  // 6: calendar.CalendarService.UpdateEvent:input_type -> calendar.UpdateEventRequest
 	7,  // 7: calendar.CalendarService.DeleteEvent:input_type -> calendar.DeleteEventRequest
 	9,  // 8: calendar.CalendarService.GetAvailableSlots:input_type -> calendar.GetAvailableSlotsRequest
-	2,  // 9: calendar.CalendarService.CreateEvent:output_type -> calendar.CreateEventResponse
-	4,  // 10: calendar.CalendarService.GetEvents:output_type -> calendar.GetEventsResponse
-	6,  // 11: calendar.CalendarService.UpdateEvent:output_type -> calendar.UpdateEventResponse
-	8,  // 12: calendar.CalendarService.DeleteEvent:output_type -> calendar.DeleteEventResponse
-	11, // 13: calendar.CalendarService.GetAvailableSlots:output_type -> calendar.GetAvailableSlotsResponse
-	9,  // [9:14] is the sub-list for method output_type
-	4,  // [4:9] is the sub-list for method input_type
+	12, // 9: calendar.AgentService.ProcessMessage:input_type -> calendar.ProcessMessageRequest
+	14, // 10: calendar.AgentService.GetAgentState:input_type -> calendar.GetAgentStateRequest
+	2,  // 11: calendar.CalendarService.CreateEvent:output_type -> calendar.CreateEventResponse
+	4,  // 12: calendar.CalendarService.GetEvents:output_type -> calendar.GetEventsResponse
+	6,  // 13: calendar.CalendarService.UpdateEvent:output_type -> calendar.UpdateEventResponse
+	8,  // 14: calendar.CalendarService.DeleteEvent:output_type -> calendar.DeleteEventResponse
+	11, // 15: calendar.CalendarService.GetAvailableSlots:output_type -> calendar.GetAvailableSlotsResponse
+	13, // 16: calendar.AgentService.ProcessMessage:output_type -> calendar.ProcessMessageResponse
+	15, // 17: calendar.AgentService.GetAgentState:output_type -> calendar.GetAgentStateResponse
+	11, // [11:18] is the sub-list for method output_type
+	4,  // [4:11] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
 	4,  // [4:4] is the sub-list for extension extendee
 	0,  // [0:4] is the sub-list for field type_name
@@ -960,9 +1216,9 @@ func file_proto_calendar_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_calendar_proto_rawDesc), len(file_proto_calendar_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   16,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_calendar_proto_goTypes,
 		DependencyIndexes: file_proto_calendar_proto_depIdxs,

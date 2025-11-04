@@ -4,9 +4,13 @@
 proto:
 	@echo "Generating protobuf code..."
 	@export PATH=$$PATH:$$(go env GOPATH)/bin && \
-	protoc --go_out=. --go_opt=paths=source_relative \
-		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		proto/calendar.proto
+	for f in $(PROTO_FILES); do \
+		echo "protoc $$f"; \
+		protoc --proto_path=proto \
+			--go_out=. --go_opt=paths=source_relative \
+			--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+			$$f || exit 1; \
+	done
 	@echo "Protobuf code generated successfully"
 
 # Build the Orbi Agent binary
