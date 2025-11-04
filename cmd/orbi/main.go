@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strings"
 
 	"github.com/waydxd/Orbit-Orbi/pkg/orbi"
+	pb "github.com/waydxd/Orbit-Orbi/proto"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -22,6 +25,8 @@ func main() {
 	calendarAddr := getEnv("CALENDAR_SERVICE_ADDR", "localhost:50051")
 	openAIKey := getEnv("OPENAI_API_KEY", "")
 	model := getEnv("OPENAI_MODEL", "gpt-3.5-turbo")
+	agentAddr := getEnv("AGENT_SERVICE_ADDR", "localhost:50052")
+	interactive := getEnv("AGENT_MODE", "interactive") == "interactive"
 
 	if openAIKey == "" {
 		log.Println("Warning: OPENAI_API_KEY not set. Agent will not function without it.")
@@ -44,40 +49,69 @@ func main() {
 	defer agent.Close()
 
 	log.Println("Orbi agent initialized successfully!")
-	log.Println("Type 'exit' or 'quit' to exit the chat.")
-	log.Println()
 
-	// Start interactive chat loop
-	reader := bufio.NewReader(os.Stdin)
-	ctx := context.Background()
+	// Create gRPC server and register services
+	server := grpc.NewServer()
+	agentServer := orbi.NewAgentServer(agent)
+	pb.RegisterAgentServiceServer(server, agentServer)
 
-	for {
-		fmt.Print("You: ")
-		input, err := reader.ReadString('\n')
+	// Start gRPC server in a goroutine
+	go func() {
+		listener, err := net.Listen("tcp", agentAddr)
 		if err != nil {
-			log.Printf("Error reading input: %v", err)
-			continue
+			log.Fatalf("Failed to listen on %s: %v", agentAddr, err)
+		}
+		log.Printf("AgentService gRPC server listening on %s", agentAddr)
+		if err := server.Serve(listener); err != nil {
+			log.Fatalf("gRPC server error: %v", err)
+		}
+	}()
+
+	// If interactive mode, start CLI
+	if interactive {
+		log.Println("Type 'exit' or 'quit' to exit the chat.")
+		log.Println()
+
+		// Start interactive chat loop
+		reader := bufio.NewReader(os.Stdin)
+		ctx := context.Background()
+
+		for {
+			fmt.Print("You: ")
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				log.Printf("Error reading input: %v", err)
+				continue
+			}
+
+			input = strings.TrimSpace(input)
+			if input == "" {
+				continue
+			}
+
+			// Check for exit commands
+			if strings.ToLower(input) == "exit" || strings.ToLower(input) == "quit" {
+				log.Println("Goodbye!")
+				break
+			}
+
+			// Process the message with the agent
+			response, err := agent.Chat(ctx, input)
+			if err != nil {
+				log.Printf("Error processing message: %v", err)
+				continue
+			}
+
+			fmt.Printf("Orbi: %s\n\n", response)
 		}
 
-		input = strings.TrimSpace(input)
-		if input == "" {
-			continue
-		}
+		server.Stop()
+	} else {
+		log.Println("Agent running in server mode only (no interactive CLI).")
+		log.Println("Clients can connect via gRPC to process messages.")
 
-		// Check for exit commands
-		if strings.ToLower(input) == "exit" || strings.ToLower(input) == "quit" {
-			log.Println("Goodbye!")
-			break
-		}
-
-		// Process the message with the agent
-		response, err := agent.Chat(ctx, input)
-		if err != nil {
-			log.Printf("Error processing message: %v", err)
-			continue
-		}
-
-		fmt.Printf("Orbi: %s\n\n", response)
+		// Keep the server running indefinitely
+		select {}
 	}
 }
 
