@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package calendar;
 
+import "proto/calendar.proto";
+
 option go_package = "github.com/waydxd/Orbit-Orbi/proto/calendar";
 
 // CalendarDataService defines the gRPC service for Core to expose calendar data to Agent
@@ -15,18 +17,6 @@ service CalendarDataService {
   
   // QueryEvents performs complex queries on calendar events
   rpc QueryEvents(QueryEventsRequest) returns (QueryEventsResponse);
-}
-
-// Event represents a calendar event
-message Event {
-  string id = 1;
-  string title = 2;
-  string description = 3;
-  int64 start_time = 4;  // Unix timestamp
-  int64 end_time = 5;    // Unix timestamp
-  string location = 6;
-  repeated string attendees = 7;
-  string status = 8;
 }
 
 // GetCalendarDataRequest is used by Agent to request calendar data from Core
