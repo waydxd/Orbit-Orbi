@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/waydxd/Orbit-Orbi/pkg/llm"
+	"github.com/waydxd/Orbit-Orbi/pkg/orbi"
 )
 
 // Example: How to integrate the LLM client into your Orbi chatbot module
@@ -100,6 +101,8 @@ func int32Ptr(i int32) *int32 {
 
 // Example usage in main
 func ExampleUsage() {
+	// Load dotenv file if present so example honors local .env configuration.
+	_ = orbi.LoadDotEnv(".env")
 	ctx := context.Background()
 
 	// Initialize provider
@@ -150,7 +153,7 @@ func NewLLMChain(provider *LLMProvider, promptTemplate string) *LLMChain {
 func (c *LLMChain) Run(ctx context.Context, input map[string]string) (string, error) {
 	// Format prompt with input variables
 	prompt := c.prompt
-	for key, value := range input {
+	for _, value := range input {
 		prompt = fmt.Sprintf(prompt, value)
 	}
 

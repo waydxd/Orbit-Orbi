@@ -12,6 +12,12 @@ import (
 )
 
 func main() {
+	// Load .env file if present so environment variables can be set from it.
+	// This makes the app work when the user prefers dotenv files instead of
+	// exporting variables in the shell.
+	if err := orbi.LoadDotEnv(".env"); err == nil {
+		// loaded successfully or file missing; nothing to do here
+	}
 	// Get configuration from environment variables
 	calendarAddr := getEnv("CALENDAR_SERVICE_ADDR", "localhost:50051")
 	openAIKey := getEnv("OPENAI_API_KEY", "")

@@ -240,8 +240,8 @@ func UseCase2_ScheduleNewEvent(planner *PlannerChatbotAgent) string {
 	ctx := context.Background()
 	session := planner.CreateSession("user-789")
 
-	// First message asks to create event
-	response1, _ := planner.Process(ctx, "Schedule a meeting tomorrow at 3pm", session)
+	// First message asks to create event (ignore intermediate response)
+	_, _ = planner.Process(ctx, "Schedule a meeting tomorrow at 3pm", session)
 
 	// Second message confirms
 	response2, _ := planner.Process(ctx, "yes", session)
@@ -265,11 +265,11 @@ func UseCase4_ChineseConversation(planner *PlannerChatbotAgent) string {
 	ctx := context.Background()
 	session := planner.CreateSession("user-chn")
 
-	// Chinese query
-	response1, _ := planner.Process(ctx, "幫我查一下明天的行程", session)
+	// Chinese query (ignore intermediate responses)
+	_, _ = planner.Process(ctx, "幫我查一下明天的行程", session)
 
 	// Chinese reschedule request
-	response2, _ := planner.Process(ctx, "幫我把明天的會議延後一小時", session)
+	_, _ = planner.Process(ctx, "幫我把明天的會議延後一小時", session)
 
 	// Chinese confirmation
 	response3, _ := planner.Process(ctx, "可以", session)
