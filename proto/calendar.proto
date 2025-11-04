@@ -22,6 +22,15 @@ service CalendarService {
   rpc GetAvailableSlots(GetAvailableSlotsRequest) returns (GetAvailableSlotsResponse);
 }
 
+// AgentService defines the gRPC service for agent operations (implemented by Agent)
+service AgentService {
+  // ProcessMessage processes a user message and returns a response
+  rpc ProcessMessage(ProcessMessageRequest) returns (ProcessMessageResponse);
+  
+  // GetAgentState returns the current state of the agent
+  rpc GetAgentState(GetAgentStateRequest) returns (GetAgentStateResponse);
+}
+
 // Event represents a calendar event
 message Event {
   string id = 1;
@@ -112,5 +121,31 @@ message TimeSlot {
 message GetAvailableSlotsResponse {
   repeated TimeSlot slots = 1;
   bool success = 2;
+  string message = 3;
+}
+
+// ProcessMessageRequest contains a user message for the agent to process
+message ProcessMessageRequest {
+  string message = 1;
+  string session_id = 2;  // Optional session ID for context tracking
+}
+
+// ProcessMessageResponse contains the agent's response to a user message
+message ProcessMessageResponse {
+  string response = 1;
+  bool success = 2;
+  string error = 3;
+  string session_id = 4;
+}
+
+// GetAgentStateRequest requests the current state of the agent
+message GetAgentStateRequest {
+  string session_id = 1;
+}
+
+// GetAgentStateResponse contains the agent's current state
+message GetAgentStateResponse {
+  bool ready = 1;
+  string status = 2;
   string message = 3;
 }
