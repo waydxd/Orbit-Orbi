@@ -26,6 +26,7 @@ type Config struct {
 	CalendarServiceAddr string
 	OpenAIAPIKey        string
 	Model               string
+	BaseURL             string
 }
 
 // NewAgent creates a new Orbi agent
@@ -38,11 +39,14 @@ func NewAgent(cfg Config) (*Agent, error) {
 
 	// Initialize LLM
 	llm, err := openai.New(
+		openai.WithBaseURL(cfg.BaseURL),
 		openai.WithToken(cfg.OpenAIAPIKey),
 		openai.WithModel(cfg.Model),
+		openai.WithAPIType(openai.APITypeAzure),
+		openai.WithEmbeddingModel(cfg.Model),
 	)
 	if err != nil {
-		calendarClient.Close()
+		_ = calendarClient.Close()
 		return nil, fmt.Errorf("failed to initialize LLM: %w", err)
 	}
 

@@ -22,11 +22,12 @@ func main() {
 		// loaded successfully or file missing; nothing to do here
 	}
 	// Get configuration from environment variables
-	calendarAddr := getEnv("CALENDAR_SERVICE_ADDR", "localhost:50051")
+	calendarAddr := getEnv("CALENDAR_SERVICE_ADDR", "vml1wk238.cse.ust.hk:8080")
 	openAIKey := getEnv("OPENAI_API_KEY", "")
 	model := getEnv("OPENAI_MODEL", "gpt-3.5-turbo")
-	agentAddr := getEnv("AGENT_SERVICE_ADDR", "localhost:50052")
+	agentAddr := getEnv("AGENT_SERVICE_ADDR", "localhost:50042")
 	interactive := getEnv("AGENT_MODE", "interactive") == "interactive"
+	baseURL := getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1/")
 
 	if openAIKey == "" {
 		log.Println("Warning: OPENAI_API_KEY not set. Agent will not function without it.")
@@ -38,15 +39,17 @@ func main() {
 		CalendarServiceAddr: calendarAddr,
 		OpenAIAPIKey:        openAIKey,
 		Model:               model,
+		BaseURL:             baseURL,
 	}
 
 	// Initialize the Orbi agent
 	log.Println("Initializing Orbi agent...")
+	log.Println("Addressing Calendar Service at:", calendarAddr)
 	agent, err := orbi.NewAgent(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create agent: %v", err)
 	}
-	defer agent.Close()
+	defer func() { _ = agent.Close() }()
 
 	log.Println("Orbi agent initialized successfully!")
 

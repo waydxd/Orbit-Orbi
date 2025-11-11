@@ -1,7 +1,7 @@
 # Orbi Configuration
 
 # Calendar service gRPC address
-calendar_service_addr: "localhost:50051"
+calendar_service_addr: "vml1wk238.cse.ust.hk:8080"
 
 # OpenAI API configuration
 openai_api_key: "your-openai-api-key-here"
