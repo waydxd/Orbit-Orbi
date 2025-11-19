@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	pb "github.com/waydxd/Orbit-Orbi/proto"
+	"google.golang.org/grpc/metadata"
 )
 
 // AgentServer implements the AgentService gRPC service
@@ -32,7 +33,7 @@ func NewAgentServer(agent *Agent) *AgentServer {
 		agent:       agent,
 		sessions:    make(map[string]*SessionState),
 		isReady:     true,
-		readyReason: "Agent initialized and ready",
+		readyReason: "ready; will connect to calendar service on demand",
 	}
 }
 
@@ -47,6 +48,23 @@ func (s *AgentServer) ProcessMessage(ctx context.Context, req *pb.ProcessMessage
 			SessionId: req.SessionId,
 		}, nil
 	}
+
+	// Enforce stateless contract: require user_id; session_id optional per proto
+	if req.GetUserId() == "" {
+		return &pb.ProcessMessageResponse{
+			Response:  "",
+			Success:   false,
+			Error:     "missing user_id",
+			SessionId: req.SessionId,
+		}, nil
+	}
+
+	// Propagate IDs via metadata for downstream calls
+	md := metadata.Pairs(
+		"user_id", req.GetUserId(),
+		"session_id", req.GetSessionId(),
+	)
+	ctx = metadata.NewIncomingContext(ctx, md)
 
 	// Process the message through the agent
 	response, err := s.agent.Chat(ctx, req.Message)
@@ -116,6 +134,13 @@ func (s *AgentServer) SetReady(ready bool, reason string) {
 
 	s.isReady = ready
 	s.readyReason = reason
+}
+
+// IsReady returns current readiness and reason
+func (s *AgentServer) IsReady() (bool, string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.isReady, s.readyReason
 }
 
 // GetSessions returns all tracked sessions (for debugging/monitoring)

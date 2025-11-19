@@ -101,8 +101,8 @@ type MockRetrievalTool struct {
 	events []map[string]interface{}
 }
 
-func (m *MockRetrievalTool) Name() string                        { return "mock_retrieval_tool" }
-func (m *MockRetrievalTool) Description() string                { return "Mock retrieval tool" }
+func (m *MockRetrievalTool) Name() string        { return "mock_retrieval_tool" }
+func (m *MockRetrievalTool) Description() string { return "Mock retrieval tool" }
 func (m *MockRetrievalTool) Execute(ctx context.Context, params map[string]interface{}) (*ToolResponse, error) {
 	return &ToolResponse{Success: true, Data: map[string]interface{}{"count": 0}}, nil
 }
@@ -144,8 +144,8 @@ func (m *MockRetrievalTool) QueryHistory(
 // MockUpdateTool is a mock implementation of UpdateTool
 type MockUpdateTool struct{}
 
-func (m *MockUpdateTool) Name() string                        { return "mock_update_tool" }
-func (m *MockUpdateTool) Description() string                { return "Mock update tool" }
+func (m *MockUpdateTool) Name() string        { return "mock_update_tool" }
+func (m *MockUpdateTool) Description() string { return "Mock update tool" }
 func (m *MockUpdateTool) Execute(ctx context.Context, params map[string]interface{}) (*ToolResponse, error) {
 	return &ToolResponse{Success: true, Data: map[string]interface{}{"id": "123"}}, nil
 }
@@ -362,8 +362,7 @@ func CreateFullyConfiguredPlannerAgent() *PlannerChatbotAgent {
 
 // PrintConversationFlow prints a visualization of the conversation flow
 func PrintConversationFlow() {
-	fmt.Println(`
-Conversation Flow Diagram:
+	const flow = `Conversation Flow Diagram:
 
 User Input
     ↓
@@ -393,6 +392,6 @@ User Input
 │  Generate response      │
 └────────┬────────────────┘
          ↓
-   User Response
-`)
+   User Response`
+	fmt.Println(flow)
 }

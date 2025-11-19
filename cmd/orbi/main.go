@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 
@@ -15,17 +16,18 @@ import (
 )
 
 func main() {
-	// Load .env file if present so environment variables can be set from it.
+	// Load .env if present so environment variables can be set from it.
 	// This makes the app work when the user prefers dotenv files instead of
 	// exporting variables in the shell.
 	if err := orbi.LoadDotEnv(".env"); err == nil {
 		// loaded successfully or file missing; nothing to do here
 	}
 	// Get configuration from environment variables
-	calendarAddr := getEnv("CALENDAR_SERVICE_ADDR", "vml1wk238.cse.ust.hk:8080")
+	calendarAddr := getEnv("CORE_CALENDAR_ADDR", getEnv("CALENDAR_SERVICE_ADDR", "localhost:50052"))
 	openAIKey := getEnv("OPENAI_API_KEY", "")
 	model := getEnv("OPENAI_MODEL", "gpt-3.5-turbo")
-	agentAddr := getEnv("AGENT_SERVICE_ADDR", "localhost:50042")
+	agentAddr := getEnv("AGENT_GRPC_ADDR", getEnv("AGENT_SERVICE_ADDR", "0.0.0.0:50042"))
+	httpAddr := getEnv("AGENT_HTTP_ADDR", "0.0.0.0:8088")
 	interactive := getEnv("AGENT_MODE", "interactive") == "interactive"
 	baseURL := getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1/")
 
@@ -43,20 +45,17 @@ func main() {
 	}
 
 	// Initialize the Orbi agent
-	log.Println("Initializing Orbi agent...")
-	log.Println("Addressing Calendar Service at:", calendarAddr)
+	log.Println("Starting Orbi agent...")
 	agent, err := orbi.NewAgent(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create agent: %v", err)
 	}
 	defer func() { _ = agent.Close() }()
 
-	log.Println("Orbi agent initialized successfully!")
-
 	// Create gRPC server and register services
-	server := grpc.NewServer()
+	grpcServer := grpc.NewServer()
 	agentServer := orbi.NewAgentServer(agent)
-	pb.RegisterAgentServiceServer(server, agentServer)
+	pb.RegisterAgentServiceServer(grpcServer, agentServer)
 
 	// Start gRPC server in a goroutine
 	go func() {
@@ -64,11 +63,39 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to listen on %s: %v", agentAddr, err)
 		}
-		log.Printf("AgentService gRPC server listening on %s", agentAddr)
-		if err := server.Serve(listener); err != nil {
+		log.Printf("AgentService gRPC listening on %s", agentAddr)
+		if err := grpcServer.Serve(listener); err != nil {
 			log.Fatalf("gRPC server error: %v", err)
 		}
 	}()
+
+	// Start HTTP health server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/livez", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ready, reason := agentServer.IsReady()
+		if !ready {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(reason))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready"))
+	})
+	go func() {
+		log.Printf("HTTP health listening on %s", httpAddr)
+		if err := http.ListenAndServe(httpAddr, mux); err != nil {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+
+	// Mark agent as ready immediately - calendar client will be lazily initialized
+	// when Core first calls ProcessMessage
+	agentServer.SetReady(true, "ready; calendar client will connect on demand")
+	log.Println("Agent is ready to accept connections")
 
 	// If interactive mode, start CLI
 	if interactive {
@@ -108,7 +135,7 @@ func main() {
 			fmt.Printf("Orbi: %s\n\n", response)
 		}
 
-		server.Stop()
+		grpcServer.Stop()
 	} else {
 		log.Println("Agent running in server mode only (no interactive CLI).")
 		log.Println("Clients can connect via gRPC to process messages.")
