@@ -162,8 +162,20 @@ func (a *Agent) Chat(ctx context.Context, message string) (string, error) {
 CRITICAL Instructions for handling dates and times:
 1. Use the current date/time above as your ONLY reference for interpreting relative dates
 2. When using calendar tools, provide datetime values in this EXACT format: "YYYY-MM-DD HH:MM:SS"
-   
-Examples (assuming current time is %s):
+
+IMPORTANT: Default Action Behavior
+- If the user provides event details (title, time, date) WITHOUT explicitly stating an action (like "show", "list", "find", "check"), you should DEFAULT to CREATING the event
+- Examples that should CREATE events:
+  * "Meeting tomorrow at 9am"
+  * "Dentist appointment next Tuesday 2pm"
+  * "Lunch with John on Friday at noon"
+- Examples that should NOT create (query instead):
+  * "What do I have tomorrow?"
+  * "Show me my schedule for next week"
+  * "Do I have any meetings on Monday?"
+  * "Find available time tomorrow"
+
+Datetime Format Examples (assuming current time is %s):
 - For "tomorrow at 9am": use "2025-11-23 09:00:00"
 - For "today at 2:30pm": use "2025-11-22 14:30:00"
 - For "next Monday at 10am": calculate the date of next Monday and use "YYYY-MM-DD 10:00:00"
@@ -174,7 +186,7 @@ Format Rules:
 - All times are in %s timezone
 - Do NOT calculate Unix timestamps - the system handles conversion
 
-Example tool call for creating an event tomorrow at 9am:
+Example tool call for creating an event:
 {
   "title": "Meeting",
   "start_time": "2025-11-23 09:00:00",
@@ -246,8 +258,9 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 		return "", fmt.Errorf("invalid create event payload: %w", err)
 	}
 
+	// If title is empty, try to extract it from the input or use a default
 	if p.Title == "" {
-		p.Title = "Untitled Event"
+		p.Title = "Event"
 	}
 
 	// Load Hong Kong timezone for parsing
@@ -306,7 +319,14 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 	if startTS == 0 || endTS == 0 {
 		start := time.Now().In(loc)
 		startTS = start.Unix()
+		// Default to 1 hour duration
 		endTS = start.Add(time.Hour).Unix()
+	} else if endTS == 0 {
+		// If only start time provided, default to 1 hour duration
+		endTS = startTS + 3600
+	} else if startTS == 0 {
+		// If only end time provided, default start to 1 hour before
+		startTS = endTS - 3600
 	}
 
 	// Adjust years if timestamp is in past year
