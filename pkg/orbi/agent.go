@@ -2,7 +2,9 @@ package orbi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -55,6 +57,8 @@ func NewAgent(cfg Config) (*Agent, error) {
 // It's safe to call concurrently; only one goroutine will run the init
 // sequence and others will block until it completes.
 func (a *Agent) ensureInitialized(ctx context.Context) error {
+	// use ctx to avoid unused parameter warnings in static analysis
+	_ = ctx
 	// Fast path without locking
 	if a.isInitialized() {
 		return nil
@@ -117,10 +121,9 @@ func (a *Agent) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	var firstErr error
 	if a.calendarClient != nil {
-		if err := a.calendarClient.Close(); err != nil && firstErr == nil {
-			firstErr = err
+		if err := a.calendarClient.Close(); err != nil {
+			return err
 		}
 	}
 
@@ -131,7 +134,7 @@ func (a *Agent) Close() error {
 	a.executor = nil
 	a.initialized = false
 
-	return firstErr
+	return nil
 }
 
 // Chat processes a user message and returns a response. It will lazily
@@ -142,7 +145,45 @@ func (a *Agent) Chat(ctx context.Context, message string) (string, error) {
 		return "", err
 	}
 
-	result, err := chains.Run(ctx, a.executor, message)
+	// Provide the LLM with the current runtime datetime so it doesn't rely on
+	// its training-time knowledge when interpreting relative dates/times.
+	// We include this as an explicit instruction prefix to the user's message.
+	loc, err := time.LoadLocation("Asia/Hong_Kong")
+	if err != nil {
+		log.Printf("failed to load timezone, defaulting to UTC: %v", err)
+		loc = time.UTC
+	}
+	currentTime := time.Now().In(loc)
+	currentTimeStr := currentTime.Format("2006-01-02 15:04:05")
+	timezoneName := loc.String()
+
+	augmented := fmt.Sprintf(`Current Date and Time: %s (Timezone: %s)
+
+CRITICAL Instructions for handling dates and times:
+1. Use the current date/time above as your ONLY reference for interpreting relative dates
+2. When using calendar tools, provide datetime values in this EXACT format: "YYYY-MM-DD HH:MM:SS"
+   
+Examples (assuming current time is %s):
+- For "tomorrow at 9am": use "2025-11-23 09:00:00"
+- For "today at 2:30pm": use "2025-11-22 14:30:00"
+- For "next Monday at 10am": calculate the date of next Monday and use "YYYY-MM-DD 10:00:00"
+
+Format Rules:
+- Use 24-hour format (00:00 to 23:59)
+- Always include leading zeros (e.g., "09:00:00" not "9:0:0")
+- All times are in %s timezone
+- Do NOT calculate Unix timestamps - the system handles conversion
+
+Example tool call for creating an event tomorrow at 9am:
+{
+  "title": "Meeting",
+  "start_time": "2025-11-23 09:00:00",
+  "end_time": "2025-11-23 10:00:00"
+}
+
+User: %s`, currentTimeStr, timezoneName, currentTimeStr, timezoneName, message)
+
+	result, err := chains.Run(ctx, a.executor, augmented)
 	if err != nil {
 		return "", fmt.Errorf("failed to process message: %w", err)
 	}
@@ -182,20 +223,119 @@ func (t *createEventTool) Description() string {
 	return `Create a new calendar event. Input should be a JSON object with fields:
 	- title: string (required)
 	- description: string (optional)
-	- start_time: Unix timestamp in seconds (required)
-	- end_time: Unix timestamp in seconds (required)
+	- start_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (required, e.g., "2025-11-23 09:00:00")
+	- end_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (required, e.g., "2025-11-23 10:00:00")
 	- location: string (optional)
 	- attendees: array of email addresses (optional)`
 }
 
 func (t *createEventTool) Call(ctx context.Context, input string) (string, error) {
-	// Placeholder parsing
+	// Parse JSON input from the LLM/tool call
+	type payload struct {
+		Title       string      `json:"title"`
+		Description string      `json:"description"`
+		StartTime   interface{} `json:"start_time"` // Can be string or int64
+		EndTime     interface{} `json:"end_time"`   // Can be string or int64
+		Location    string      `json:"location"`
+		Attendees   []string    `json:"attendees"`
+		Recurrence  string      `json:"recurrence"`
+		Status      string      `json:"status"`
+	}
+	var p payload
+	if err := json.Unmarshal([]byte(input), &p); err != nil {
+		return "", fmt.Errorf("invalid create event payload: %w", err)
+	}
+
+	if p.Title == "" {
+		p.Title = "Untitled Event"
+	}
+
+	// Load Hong Kong timezone for parsing
+	loc, _ := time.LoadLocation("Asia/Hong_Kong")
+	if loc == nil {
+		loc = time.UTC
+	}
+
+	// Parse start time (can be datetime string or Unix timestamp)
+	var startTS int64
+	var endTS int64
+
+	if p.StartTime != nil {
+		switch v := p.StartTime.(type) {
+		case string:
+			// Parse datetime string
+			t, err := time.ParseInLocation("2006-01-02 15:04:05", v, loc)
+			if err != nil {
+				// Try alternative formats
+				t, err = time.Parse(time.RFC3339, v)
+				if err != nil {
+					return "", fmt.Errorf("invalid start_time format: received '%s', expected 'YYYY-MM-DD HH:MM:SS' (e.g., '2025-11-23 09:00:00')", v)
+				}
+				t = t.In(loc)
+			}
+			startTS = t.Unix()
+		case float64:
+			startTS = int64(v)
+		default:
+			return "", fmt.Errorf("start_time must be a datetime string in format 'YYYY-MM-DD HH:MM:SS'")
+		}
+	}
+
+	if p.EndTime != nil {
+		switch v := p.EndTime.(type) {
+		case string:
+			// Parse datetime string
+			t, err := time.ParseInLocation("2006-01-02 15:04:05", v, loc)
+			if err != nil {
+				// Try alternative formats
+				t, err = time.Parse(time.RFC3339, v)
+				if err != nil {
+					return "", fmt.Errorf("invalid end_time format: received '%s', expected 'YYYY-MM-DD HH:MM:SS' (e.g., '2025-11-23 10:00:00')", v)
+				}
+				t = t.In(loc)
+			}
+			endTS = t.Unix()
+		case float64:
+			endTS = int64(v)
+		default:
+			return "", fmt.Errorf("end_time must be a datetime string in format 'YYYY-MM-DD HH:MM:SS'")
+		}
+	}
+
+	// If times not provided, default to 1-hour event starting now
+	if startTS == 0 || endTS == 0 {
+		start := time.Now().In(loc)
+		startTS = start.Unix()
+		endTS = start.Add(time.Hour).Unix()
+	}
+
+	// Adjust years if timestamp is in past year
+	startTS = adjustTimestampYear(startTS)
+	endTS = adjustTimestampYear(endTS)
+
+	// Debug: log parsed timestamps
+	user := getUserID(ctx)
+	log.Printf("[agent.debug] createEvent start=%d (%s) end=%d (%s) user=%s",
+		startTS, time.Unix(startTS, 0).In(loc).Format(time.RFC3339),
+		endTS, time.Unix(endTS, 0).In(loc).Format(time.RFC3339),
+		user,
+	)
+
+	// Validate the event falls within [now, now+1year]
+	if err := validateEventWithinOneYear(startTS, endTS); err != nil {
+		return "", fmt.Errorf("event time outside allowed window: %w", err)
+	}
+
 	req := &pb.CreateEventRequest{
 		UserId:      getUserID(ctx),
-		Title:       "Sample Event",
-		Description: "Created via Orbi agent",
-		StartTime:   time.Now().Unix(),
-		EndTime:     time.Now().Add(1 * time.Hour).Unix(),
+		Title:       p.Title,
+		Description: p.Description,
+		StartTime:   startTS,
+		EndTime:     endTS,
+		Location:    p.Location,
+		Attendees:   p.Attendees,
+		Recurrence:  p.Recurrence,
+		Status:      p.Status,
 	}
 
 	resp, err := t.client.CreateEvent(ctx, req)
@@ -221,10 +361,34 @@ func (t *getEventsTool) Description() string {
 }
 
 func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) {
+	// Parse JSON input for time range and optional status filter
+	type payload struct {
+		StartTime int64  `json:"start_time"`
+		EndTime   int64  `json:"end_time"`
+		Status    string `json:"status"`
+	}
+	var p payload
+	if input != "" {
+		_ = json.Unmarshal([]byte(input), &p)
+	}
+
+	// If caller provided timestamps, nudge years; otherwise leave zeros so
+	// clampRangeToOneYearWindow will provide reasonable defaults.
+	if p.StartTime != 0 {
+		p.StartTime = adjustTimestampYear(p.StartTime)
+	}
+	if p.EndTime != 0 {
+		p.EndTime = adjustTimestampYear(p.EndTime)
+	}
+
+	// Clamp requested range to allowed window
+	clampedStart, clampedEnd := clampRangeToOneYearWindow(p.StartTime, p.EndTime)
+
 	req := &pb.GetEventsRequest{
 		UserId:    getUserID(ctx),
-		StartTime: time.Now().Unix(),
-		EndTime:   time.Now().Add(24 * time.Hour).Unix(),
+		StartTime: clampedStart,
+		EndTime:   clampedEnd,
+		Status:    p.Status,
 	}
 
 	resp, err := t.client.GetEvents(ctx, req)
@@ -247,18 +411,130 @@ func (t *updateEventTool) Description() string {
 	- id: string (required)
 	- title: string (optional)
 	- description: string (optional)
-	- start_time: Unix timestamp in seconds (optional)
-	- end_time: Unix timestamp in seconds (optional)
+	- start_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (optional)
+	- end_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (optional)
 	- location: string (optional)
 	- attendees: array of email addresses (optional)
 	- status: string (optional)`
 }
 
 func (t *updateEventTool) Call(ctx context.Context, input string) (string, error) {
+	// Parse JSON input for updates
+	type payload struct {
+		ID          string      `json:"id"`
+		Title       string      `json:"title"`
+		Description string      `json:"description"`
+		StartTime   interface{} `json:"start_time"` // Can be string or int64
+		EndTime     interface{} `json:"end_time"`   // Can be string or int64
+		Location    string      `json:"location"`
+		Attendees   []string    `json:"attendees"`
+		Status      string      `json:"status"`
+	}
+	var p payload
+	if err := json.Unmarshal([]byte(input), &p); err != nil {
+		return "", fmt.Errorf("invalid update event payload: %w", err)
+	}
+	if p.ID == "" {
+		return "", fmt.Errorf("missing event id")
+	}
+
+	// Load Hong Kong timezone for parsing
+	loc, _ := time.LoadLocation("Asia/Hong_Kong")
+	if loc == nil {
+		loc = time.UTC
+	}
+
+	// Parse start time (can be datetime string or Unix timestamp)
+	var startTS int64
+	var endTS int64
+
+	if p.StartTime != nil {
+		switch v := p.StartTime.(type) {
+		case string:
+			t, err := time.ParseInLocation("2006-01-02 15:04:05", v, loc)
+			if err != nil {
+				// Try alternative formats
+				t, err = time.Parse(time.RFC3339, v)
+				if err != nil {
+					return "", fmt.Errorf("invalid start_time format: received '%s', expected 'YYYY-MM-DD HH:MM:SS'", v)
+				}
+				t = t.In(loc)
+			}
+			startTS = t.Unix()
+		case float64:
+			startTS = int64(v)
+		}
+	}
+
+	if p.EndTime != nil {
+		switch v := p.EndTime.(type) {
+		case string:
+			t, err := time.ParseInLocation("2006-01-02 15:04:05", v, loc)
+			if err != nil {
+				// Try alternative formats
+				t, err = time.Parse(time.RFC3339, v)
+				if err != nil {
+					return "", fmt.Errorf("invalid end_time format: received '%s', expected 'YYYY-MM-DD HH:MM:SS'", v)
+				}
+				t = t.In(loc)
+			}
+			endTS = t.Unix()
+		case float64:
+			endTS = int64(v)
+		}
+	}
+
+	// Adjust years if timestamp is in past year
+	if startTS != 0 {
+		startTS = adjustTimestampYear(startTS)
+	}
+	if endTS != 0 {
+		endTS = adjustTimestampYear(endTS)
+	}
+
+	// Debug logging
+	if startTS != 0 || endTS != 0 {
+		log.Printf("[agent.debug] updateEvent start=%d (%s) end=%d (%s) user=%s id=%s",
+			startTS, time.Unix(startTS, 0).In(loc).Format(time.RFC3339),
+			endTS, time.Unix(endTS, 0).In(loc).Format(time.RFC3339),
+			getUserID(ctx), p.ID,
+		)
+	}
+
+	// If the caller provided any time updates, ensure final times fall within the allowed window.
+	if startTS != 0 || endTS != 0 {
+		// Build final start/end defaults if only one side was provided
+		s := time.Unix(startTS, 0)
+		e := time.Unix(endTS, 0)
+		if startTS == 0 && endTS != 0 {
+			// default start to one hour before end
+			s = e.Add(-1 * time.Hour)
+		}
+		if endTS == 0 && startTS != 0 {
+			// default end to one hour after start
+			e = s.Add(time.Hour)
+		}
+
+		// Validate
+		if err := validateEventWithinOneYear(s.Unix(), e.Unix()); err != nil {
+			return "", fmt.Errorf("event time outside allowed window: %w", err)
+		}
+
+		// Use the (possibly filled) values
+		startTS = s.Unix()
+		endTS = e.Unix()
+	}
+
 	req := &pb.UpdateEventRequest{
-		UserId: getUserID(ctx),
-		Id:     "sample-id",
-		Title:  "Updated Event",
+		UserId:      getUserID(ctx),
+		Id:          p.ID,
+		Title:       p.Title,
+		Description: p.Description,
+		StartTime:   startTS,
+		EndTime:     endTS,
+		Location:    p.Location,
+		Attendees:   p.Attendees,
+		Status:      p.Status,
 	}
 
 	resp, err := t.client.UpdateEvent(ctx, req)
@@ -282,9 +558,21 @@ func (t *deleteEventTool) Description() string {
 }
 
 func (t *deleteEventTool) Call(ctx context.Context, input string) (string, error) {
+	// Parse JSON input for id
+	type payload struct {
+		ID string `json:"id"`
+	}
+	var p payload
+	if err := json.Unmarshal([]byte(input), &p); err != nil {
+		return "", fmt.Errorf("invalid delete event payload: %w", err)
+	}
+	if p.ID == "" {
+		return "", fmt.Errorf("missing event id")
+	}
+
 	req := &pb.DeleteEventRequest{
 		UserId: getUserID(ctx),
-		Id:     "sample-id",
+		Id:     p.ID,
 	}
 
 	resp, err := t.client.DeleteEvent(ctx, req)
@@ -313,11 +601,55 @@ func (t *getAvailableSlotsTool) Description() string {
 }
 
 func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string, error) {
+	// Parse JSON input for range and duration
+	type payload struct {
+		StartTime int64 `json:"start_time"`
+		EndTime   int64 `json:"end_time"`
+		Duration  int64 `json:"duration"` // seconds
+	}
+	var p payload
+	if input != "" {
+		_ = json.Unmarshal([]byte(input), &p)
+	}
+
+	dur := int64(3600)
+	if p.Duration > 0 {
+		dur = p.Duration
+	}
+
+	// Debug: log parsed and adjusted timestamps for visibility (use raw/adj)
+	rawStart := p.StartTime
+	rawEnd := p.EndTime
+	adjStart := adjustTimestampYear(p.StartTime)
+	adjEnd := adjustTimestampYear(p.EndTime)
+	if rawStart != 0 || rawEnd != 0 {
+		loc, _ := time.LoadLocation("Asia/Hong_Kong")
+		if loc == nil {
+			loc = time.UTC
+		}
+		log.Printf("[agent.debug] getAvailableSlots parsed start=%d (%s) end=%d (%s) adjusted start=%d (%s) end=%d (%s) user=%s",
+			rawStart, time.Unix(rawStart, 0).In(loc).Format(time.RFC3339),
+			rawEnd, time.Unix(rawEnd, 0).In(loc).Format(time.RFC3339),
+			adjStart, time.Unix(adjStart, 0).In(loc).Format(time.RFC3339),
+			adjEnd, time.Unix(adjEnd, 0).In(loc).Format(time.RFC3339),
+			getUserID(ctx),
+		)
+	}
+	p.StartTime = adjStart
+	p.EndTime = adjEnd
+
+	// Clamp the requested range to [now, now+1 year]
+	clampedStart, clampedEnd := clampRangeToOneYearWindow(p.StartTime, p.EndTime)
+	// If clampedStart >= clampedEnd then no valid window; return empty result
+	if clampedStart >= clampedEnd {
+		return "Found 0 available slots", nil
+	}
+
 	req := &pb.GetAvailableSlotsRequest{
 		UserId:    getUserID(ctx),
-		StartTime: time.Now().Unix(),
-		EndTime:   time.Now().Add(7 * 24 * time.Hour).Unix(),
-		Duration:  3600, // 1 hour
+		StartTime: clampedStart,
+		EndTime:   clampedEnd,
+		Duration:  dur,
 	}
 
 	resp, err := t.client.GetAvailableSlots(ctx, req)
@@ -327,3 +659,139 @@ func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string,
 
 	return fmt.Sprintf("Found %d available slots", len(resp.Slots)), nil
 }
+
+// adjustTimestampYear nudges a parsed Unix timestamp forward by whole years
+// ONLY if the timestamp's year is actually in the past (not just the datetime).
+// This prevents "tomorrow 9am" from being pushed to next year if it's currently 10am.
+func adjustTimestampYear(ts int64) int64 {
+	if ts == 0 {
+		return 0
+	}
+	// Load Hong Kong timezone for consistent time operations
+	loc, err := time.LoadLocation("Asia/Hong_Kong")
+	if err != nil {
+		loc = time.UTC
+	}
+
+	// Convert to time and compare with now in HK timezone
+	t := time.Unix(ts, 0).In(loc)
+	now := time.Now().In(loc)
+
+	// Only adjust if the YEAR is in the past, not just if the datetime is in the past.
+	// This prevents same-year past times (like "tomorrow 9am" when it's currently 10am)
+	// from being pushed to next year.
+	if t.Year() < now.Year() {
+		// Add years to bring it to current year
+		yearDiff := now.Year() - t.Year()
+		t = t.AddDate(yearDiff, 0, 0)
+		return t.Unix()
+	}
+
+	// If the datetime is in the past but the year is current or future,
+	// don't adjust - let the validation layer handle it
+	return ts
+}
+
+// clampRangeToOneYearWindow clamps a start/end Unix timestamp pair to the
+// allowed window: [now, now+1 year]. If either timestamp is zero it will be
+// replaced by sensible defaults (start -> now, end -> now+1h or start+1h).
+// The function returns clampedStart, clampedEnd. If the clamped range is
+// invalid (no overlap) both values may be equal which callers can treat as
+// empty range.
+func clampRangeToOneYearWindow(startTS, endTS int64) (int64, int64) {
+	// Load Hong Kong timezone for consistent time operations
+	loc, err := time.LoadLocation("Asia/Hong_Kong")
+	if err != nil {
+		loc = time.UTC
+	}
+
+	now := time.Now().In(loc)
+	windowStart := now
+	windowEnd := now.AddDate(1, 0, 0)
+
+	// If neither timestamp provided, default to [now, now+1h]
+	if startTS == 0 && endTS == 0 {
+		s := windowStart
+		e := s.Add(time.Hour)
+		return s.Unix(), e.Unix()
+	}
+
+	var s time.Time
+	var e time.Time
+
+	if startTS != 0 {
+		s = time.Unix(startTS, 0).In(loc)
+	}
+	if endTS != 0 {
+		e = time.Unix(endTS, 0).In(loc)
+	}
+
+	// If start missing, but end provided -> default start to one hour before end
+	if startTS == 0 {
+		// endTS must be non-zero here because we handled both-zero above
+		s = e.Add(-1 * time.Hour)
+	}
+
+	// If end missing, but start provided -> default end to one hour after start
+	if endTS == 0 {
+		// startTS must be non-zero here
+		e = s.Add(time.Hour)
+	}
+
+	// Clamp to window
+	if s.Before(windowStart) {
+		s = windowStart
+	}
+	if e.After(windowEnd) {
+		e = windowEnd
+	}
+
+	return s.Unix(), e.Unix()
+}
+
+// validateEventWithinOneYear ensures an event (start,end) falls within the
+// allowed [now-5min, now+1year] window and that start < end. Returns an error if
+// the event is invalid or outside the window. We allow a 5-minute grace period
+// in the past to handle processing delays and clock skew.
+func validateEventWithinOneYear(startTS, endTS int64) error {
+	// Load Hong Kong timezone for consistent time operations
+	loc, err := time.LoadLocation("Asia/Hong_Kong")
+	if err != nil {
+		loc = time.UTC
+	}
+
+	now := time.Now().In(loc)
+	// Allow 5 minute grace period for times slightly in the past
+	windowStart := now.Add(-5 * time.Minute).Unix()
+	windowEnd := now.AddDate(1, 0, 0).Unix()
+
+	if startTS == 0 || endTS == 0 {
+		return fmt.Errorf("start and end times must be provided")
+	}
+
+	if startTS >= endTS {
+		return fmt.Errorf("event start must be before end")
+	}
+
+	// Check if event is too far in the past
+	if startTS < windowStart {
+		startTime := time.Unix(startTS, 0).In(loc)
+		return fmt.Errorf("event start time %s is too far in the past (current time: %s)",
+			startTime.Format(time.RFC3339), now.Format(time.RFC3339))
+	}
+
+	// Check if event is too far in the future
+	if endTS > windowEnd {
+		endTime := time.Unix(endTS, 0).In(loc)
+		oneYearFromNow := now.AddDate(1, 0, 0)
+		return fmt.Errorf("event end time %s is beyond the allowed 1-year window (max: %s)",
+			endTime.Format(time.RFC3339), oneYearFromNow.Format(time.RFC3339))
+	}
+
+	return nil
+}
+
+// TODO: migrate from langchaingo tools to the richer PlannerChatbotAgent
+// multi-agent stack defined in this package. For now, the Agent.Chat method
+// uses langchaingo Executor with calendar tools that already call the real
+// gRPC calendar service (no mocked data).

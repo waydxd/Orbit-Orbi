@@ -99,3 +99,7 @@ func (c *CalendarClient) GetAvailableSlots(ctx context.Context, req *pb.GetAvail
 	defer cancel()
 	return c.client.GetAvailableSlots(ctx, req)
 }
+
+// CalendarRetrievalTool implements orbi.RetrievalTool using CalendarClient.
+// It is defined in the orbi package to avoid import cycles; this file only
+// provides the low-level gRPC client.
