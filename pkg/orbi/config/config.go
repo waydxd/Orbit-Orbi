@@ -9,4 +9,5 @@ type Config struct {
 	RedisAddr           string
 	RedisPassword       string
 	RedisDB             int
+	Timezone            string // Timezone for datetime parsing, e.g., "Asia/Hong_Kong". Defaults to UTC if empty or invalid.
 }

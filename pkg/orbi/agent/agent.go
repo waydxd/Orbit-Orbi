@@ -67,7 +67,7 @@ func (a *CalendarAgent) ensureInitialized(ctx context.Context) error {
 	a.llm = llmModel
 
 	// Create tools
-	calendarTools, err := tools.NewCalendarTools(a.cfg.CalendarServiceAddr)
+	calendarTools, err := tools.NewCalendarTools(a.cfg.CalendarServiceAddr, a.cfg.Timezone)
 	if err != nil {
 		return fmt.Errorf("failed to create calendar tools: %w", err)
 	}
@@ -89,10 +89,13 @@ func (a *CalendarAgent) Chat(ctx context.Context, message string) (string, error
 		return "", err
 	}
 
-	loc, err := time.LoadLocation("Asia/Hong_Kong")
-	if err != nil {
-		log.Printf("failed to load timezone, defaulting to UTC: %v", err)
-		loc = time.UTC
+	loc := time.UTC
+	if a.cfg.Timezone != "" {
+		if parsedLoc, err := time.LoadLocation(a.cfg.Timezone); err == nil {
+			loc = parsedLoc
+		} else {
+			log.Printf("failed to load timezone %q, defaulting to UTC: %v", a.cfg.Timezone, err)
+		}
 	}
 	currentTime := time.Now().In(loc)
 	currentTimeStr := currentTime.Format("2006-01-02 15:04:05")
