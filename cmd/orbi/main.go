@@ -10,7 +10,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/joho/godotenv"
 	"github.com/waydxd/Orbit-Orbi/pkg/orbi"
+	"github.com/waydxd/Orbit-Orbi/pkg/orbi/agent"
+	"github.com/waydxd/Orbit-Orbi/pkg/orbi/config"
 	pb "github.com/waydxd/Orbit-Orbi/proto"
 	"google.golang.org/grpc"
 )
@@ -19,9 +22,7 @@ func main() {
 	// Load .env if present so environment variables can be set from it.
 	// This makes the app work when the user prefers dotenv files instead of
 	// exporting variables in the shell.
-	if err := orbi.LoadDotEnv(".env"); err == nil {
-		// loaded successfully or file missing; nothing to do here
-	}
+	_ = godotenv.Load(".env")
 	// Get configuration from environment variables
 	calendarAddr := getEnv("CORE_CALENDAR_ADDR", getEnv("CALENDAR_SERVICE_ADDR", "localhost:50052"))
 	openAIKey := getEnv("OPENAI_API_KEY", "")
@@ -30,6 +31,9 @@ func main() {
 	httpAddr := getEnv("AGENT_HTTP_ADDR", "0.0.0.0:8088")
 	interactive := getEnv("AGENT_MODE", "interactive") == "interactive"
 	baseURL := getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1/")
+	redisAddr := getEnv("REDIS_ADDR", "")
+	redisPassword := getEnv("REDIS_PASSWORD", "")
+	redisDB := 0 // Default to DB 0
 
 	if openAIKey == "" {
 		log.Println("Warning: OPENAI_API_KEY not set. Agent will not function without it.")
@@ -37,24 +41,27 @@ func main() {
 	}
 
 	// Create agent configuration
-	cfg := orbi.Config{
+	cfg := config.Config{
 		CalendarServiceAddr: calendarAddr,
 		OpenAIAPIKey:        openAIKey,
 		Model:               model,
 		BaseURL:             baseURL,
+		RedisAddr:           redisAddr,
+		RedisPassword:       redisPassword,
+		RedisDB:             redisDB,
 	}
 
 	// Initialize the Orbi agent
 	log.Println("Starting Orbi agent...")
-	agent, err := orbi.NewAgent(cfg)
+	ag, err := agent.NewCalendarAgent(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create agent: %v", err)
 	}
-	defer func() { _ = agent.Close() }()
+	defer func() { _ = ag.Close() }()
 
 	// Create gRPC server and register services
 	grpcServer := grpc.NewServer()
-	agentServer := orbi.NewAgentServer(agent)
+	agentServer := orbi.NewAgentServer(ag)
 	pb.RegisterAgentServiceServer(grpcServer, agentServer)
 
 	// Start gRPC server in a goroutine
@@ -126,7 +133,7 @@ func main() {
 			}
 
 			// Process the message with the agent
-			response, err := agent.Chat(ctx, input)
+			response, err := ag.Chat(ctx, input)
 			if err != nil {
 				log.Printf("Error processing message: %v", err)
 				continue

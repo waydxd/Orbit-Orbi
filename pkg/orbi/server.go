@@ -12,7 +12,7 @@ import (
 // AgentServer implements the AgentService gRPC service
 type AgentServer struct {
 	pb.UnimplementedAgentServiceServer
-	agent       *Agent
+	agent       Agent
 	mu          sync.RWMutex
 	sessions    map[string]*SessionState
 	isReady     bool
@@ -28,7 +28,7 @@ type SessionState struct {
 }
 
 // NewAgentServer creates a new gRPC server for the Orbi agent
-func NewAgentServer(agent *Agent) *AgentServer {
+func NewAgentServer(agent Agent) *AgentServer {
 	return &AgentServer{
 		agent:       agent,
 		sessions:    make(map[string]*SessionState),
