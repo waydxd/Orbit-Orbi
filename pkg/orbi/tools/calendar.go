@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 	"time"
 
 	"github.com/tmc/langchaingo/tools"
@@ -12,19 +14,35 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// loadTimezone loads the specified timezone location. If the timezone is empty
+// or loading fails, it returns UTC as a fallback.
+func loadTimezone(timezone string) *time.Location {
+	if timezone == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		log.Printf("failed to load timezone %q, defaulting to UTC: %v", timezone, err)
+		return time.UTC
+	}
+	return loc
+}
+
 // NewCalendarTools creates a new set of calendar tools.
-func NewCalendarTools(calendarServiceAddr string) ([]tools.Tool, error) {
+func NewCalendarTools(calendarServiceAddr string, timezone string) ([]tools.Tool, error) {
 	calendarClient, err := grpcclient.NewCalendarClient(calendarServiceAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create calendar client: %w", err)
 	}
 
+	loc := loadTimezone(timezone)
+
 	return []tools.Tool{
-		&createEventTool{client: calendarClient},
-		&getEventsTool{client: calendarClient},
-		&updateEventTool{client: calendarClient},
+		&createEventTool{client: calendarClient, loc: loc},
+		&getEventsTool{client: calendarClient, loc: loc},
+		&updateEventTool{client: calendarClient, loc: loc},
 		&deleteEventTool{client: calendarClient},
-		&getAvailableSlotsTool{client: calendarClient},
+		&getAvailableSlotsTool{client: calendarClient, loc: loc},
 		&searchEventsTool{client: calendarClient},
 	}, nil
 }
@@ -32,6 +50,7 @@ func NewCalendarTools(calendarServiceAddr string) ([]tools.Tool, error) {
 // createEventTool wraps the CreateEvent gRPC call as a langchain tool
 type createEventTool struct {
 	client *grpcclient.CalendarClient
+	loc    *time.Location
 }
 
 func (t *createEventTool) Name() string { return "create_event" }
@@ -60,12 +79,11 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 		return "", fmt.Errorf("invalid create event payload: %w", err)
 	}
 
-	loc, _ := time.LoadLocation("Asia/Hong_Kong")
-	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, loc)
+	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid start_time format: %w", err)
 	}
-	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, loc)
+	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid end_time format: %w", err)
 	}
@@ -91,6 +109,7 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 // getEventsTool wraps the GetEvents gRPC call as a langchain tool
 type getEventsTool struct {
 	client *grpcclient.CalendarClient
+	loc    *time.Location
 }
 
 func (t *getEventsTool) Name() string { return "get_events" }
@@ -98,7 +117,7 @@ func (t *getEventsTool) Name() string { return "get_events" }
 func (t *getEventsTool) Description() string {
 	return `Get calendar events within a time range. Input should be a JSON object with fields:
 	- start_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (required)
-	- end_time: datetime string in format "YYYY-MM-DD HH:M:SS" (required)`
+	- end_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (required)`
 }
 
 func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) {
@@ -111,12 +130,11 @@ func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) 
 		return "", fmt.Errorf("invalid get events payload: %w", err)
 	}
 
-	loc, _ := time.LoadLocation("Asia/Hong_Kong")
-	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, loc)
+	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid start_time format: %w", err)
 	}
-	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, loc)
+	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid end_time format: %w", err)
 	}
@@ -160,6 +178,7 @@ func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) 
 // updateEventTool wraps the UpdateEvent gRPC call as a langchain tool
 type updateEventTool struct {
 	client *grpcclient.CalendarClient
+	loc    *time.Location
 }
 
 func (t *updateEventTool) Name() string { return "update_event" }
@@ -199,16 +218,15 @@ func (t *updateEventTool) Call(ctx context.Context, input string) (string, error
 		Attendees:   p.Attendees,
 	}
 
-	loc, _ := time.LoadLocation("Asia/Hong_Kong")
 	if p.StartTime != "" {
-		startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, loc)
+		startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
 		if err != nil {
 			return "", fmt.Errorf("invalid start_time format: %w", err)
 		}
 		req.StartTime = startTime.Unix()
 	}
 	if p.EndTime != "" {
-		endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, loc)
+		endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
 		if err != nil {
 			return "", fmt.Errorf("invalid end_time format: %w", err)
 		}
@@ -263,6 +281,7 @@ func (t *deleteEventTool) Call(ctx context.Context, input string) (string, error
 // getAvailableSlotsTool wraps the GetAvailableSlots gRPC call as a langchain tool
 type getAvailableSlotsTool struct {
 	client *grpcclient.CalendarClient
+	loc    *time.Location
 }
 
 func (t *getAvailableSlotsTool) Name() string { return "availability" }
@@ -285,12 +304,11 @@ func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string,
 		return "", fmt.Errorf("invalid get available slots payload: %w", err)
 	}
 
-	loc, _ := time.LoadLocation("Asia/Hong_Kong")
-	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, loc)
+	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid start_time format: %w", err)
 	}
-	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, loc)
+	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid end_time format: %w", err)
 	}
@@ -318,7 +336,7 @@ type searchEventsTool struct {
 func (t *searchEventsTool) Name() string { return "search_events" }
 
 func (t *searchEventsTool) Description() string {
-	return `Search for calendar events by a query string. This is useful for finding a specific event to get its ID. Input should be a JSON object with the field:
+	return `Search for calendar events by a query string. This is useful for finding a specific event to get its ID. The search is case-insensitive and matches partial strings in title, description, and location. Input should be a JSON object with the field:
 	- query: string (required)`
 }
 
@@ -344,9 +362,13 @@ func (t *searchEventsTool) Call(ctx context.Context, input string) (string, erro
 		return "", fmt.Errorf("failed to get events: %w", err)
 	}
 
+	queryLower := strings.ToLower(p.Query)
 	var matchedEvents []*pb.Event
 	for _, event := range resp.Events {
-		if event.Title == p.Query {
+		// Case-insensitive substring matching on title, description, and location
+		if strings.Contains(strings.ToLower(event.Title), queryLower) ||
+			strings.Contains(strings.ToLower(event.Description), queryLower) ||
+			strings.Contains(strings.ToLower(event.Location), queryLower) {
 			matchedEvents = append(matchedEvents, event)
 		}
 	}
