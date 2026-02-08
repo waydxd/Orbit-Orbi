@@ -163,6 +163,7 @@ func getSecretEnv(key, defaultValue string) string {
 	if filePath := os.Getenv(key + "_FILE"); filePath != "" {
 		if b, err := os.ReadFile(filePath); err == nil {
 			if s := strings.TrimSpace(string(b)); s != "" {
+				log.Println("Using secret from file for", key)
 				return s
 			}
 		} else {
@@ -170,28 +171,7 @@ func getSecretEnv(key, defaultValue string) string {
 		}
 	}
 
-	// 2) Look for common filenames in the current working directory. Many users
-	// keep simple files like `openai_api_key.txt` or `redis_password.txt`.
-	keyLower := strings.ToLower(key)
-	candidates := []string{
-		"./" + keyLower + ".txt",
-		"./" + keyLower,
-	}
-	// Also try hyphenated variants: openai-api-key.txt
-	dashed := strings.ReplaceAll(keyLower, "_", "-")
-	if dashed != keyLower {
-		candidates = append(candidates, "./"+dashed+".txt", "./"+dashed)
-	}
-
-	for _, p := range candidates {
-		if b, err := os.ReadFile(p); err == nil {
-			if s := strings.TrimSpace(string(b)); s != "" {
-				return s
-			}
-		}
-	}
-
-	// 3) Fallback to the environment variable value (if any) or the provided default.
+	// 2) Fallback to the environment variable value (if any) or the provided default.
 	return getEnv(key, defaultValue)
 }
 
