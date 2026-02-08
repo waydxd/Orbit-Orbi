@@ -25,18 +25,21 @@ func main() {
 	_ = godotenv.Load(".env")
 	// Get configuration from environment variables
 	calendarAddr := getEnv("CORE_CALENDAR_ADDR", getEnv("CALENDAR_SERVICE_ADDR", "localhost:50052"))
-	openAIKey := getEnv("OPENAI_API_KEY", "")
+	// For very sensitive values prefer reading from a file (docker secrets).
+	// Use OPENAI_API_KEY_FILE or REDIS_PASSWORD_FILE to point to secret files.
+	openAIKey := getSecretEnv("OPENAI_API_KEY", "")
 	model := getEnv("OPENAI_MODEL", "gpt-3.5-turbo")
 	agentAddr := getEnv("AGENT_GRPC_ADDR", getEnv("AGENT_SERVICE_ADDR", "0.0.0.0:50042"))
 	httpAddr := getEnv("AGENT_HTTP_ADDR", "0.0.0.0:8088")
 	interactive := getEnv("AGENT_MODE", "interactive") == "interactive"
 	baseURL := getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1/")
 	redisAddr := getEnv("REDIS_ADDR", "")
-	redisPassword := getEnv("REDIS_PASSWORD", "")
+	redisPassword := getSecretEnv("REDIS_PASSWORD", "")
 	redisDB := 0 // Default to DB 0
 
 	if openAIKey == "" {
 		log.Println("Warning: OPENAI_API_KEY not set. Agent will not function without it.")
+		log.Println("If you're using Docker secrets, set OPENAI_API_KEY_FILE to the secret file path.")
 		log.Println("Please set the environment variable before running in production.")
 	}
 
@@ -150,6 +153,46 @@ func main() {
 		// Keep the server running indefinitely
 		select {}
 	}
+}
+
+// getSecretEnv retrieves a sensitive environment variable from a file
+// if an env var with the suffix _FILE is set (useful for Docker secrets). It
+// falls back to the regular environment variable or the provided default.
+func getSecretEnv(key, defaultValue string) string {
+	// 1) If an env var pointing to a secret file is present, prefer it.
+	if filePath := os.Getenv(key + "_FILE"); filePath != "" {
+		if b, err := os.ReadFile(filePath); err == nil {
+			if s := strings.TrimSpace(string(b)); s != "" {
+				return s
+			}
+		} else {
+			log.Printf("Warning: unable to read secret file %s for %s: %v", filePath, key, err)
+		}
+	}
+
+	// 2) Look for common filenames in the current working directory. Many users
+	// keep simple files like `openai_api_key.txt` or `redis_password.txt`.
+	keyLower := strings.ToLower(key)
+	candidates := []string{
+		"./" + keyLower + ".txt",
+		"./" + keyLower,
+	}
+	// Also try hyphenated variants: openai-api-key.txt
+	dashed := strings.ReplaceAll(keyLower, "_", "-")
+	if dashed != keyLower {
+		candidates = append(candidates, "./"+dashed+".txt", "./"+dashed)
+	}
+
+	for _, p := range candidates {
+		if b, err := os.ReadFile(p); err == nil {
+			if s := strings.TrimSpace(string(b)); s != "" {
+				return s
+			}
+		}
+	}
+
+	// 3) Fallback to the environment variable value (if any) or the provided default.
+	return getEnv(key, defaultValue)
 }
 
 // getEnv retrieves an environment variable with a default fallback
