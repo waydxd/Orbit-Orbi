@@ -38,7 +38,7 @@ func NewCalendarAgent(cfg config.Config) (*CalendarAgent, error) {
 }
 
 // ensureInitialized performs one-time initialization of heavy resources.
-func (a *CalendarAgent) ensureInitialized(ctx context.Context) error {
+func (a *CalendarAgent) ensureInitialized() error {
 	if a.initialized {
 		return nil
 	}
@@ -85,7 +85,8 @@ func (a *CalendarAgent) ensureInitialized(ctx context.Context) error {
 
 // Chat processes a user message and returns a response.
 func (a *CalendarAgent) Chat(ctx context.Context, message string) (string, error) {
-	if err := a.ensureInitialized(ctx); err != nil {
+	if err := a.ensureInitialized(); err != nil {
+		log.Printf("[Chat] Initialization failed: %v", err)
 		return "", err
 	}
 
@@ -94,7 +95,7 @@ func (a *CalendarAgent) Chat(ctx context.Context, message string) (string, error
 		if parsedLoc, err := time.LoadLocation(a.cfg.Timezone); err == nil {
 			loc = parsedLoc
 		} else {
-			log.Printf("failed to load timezone %q, defaulting to UTC: %v", a.cfg.Timezone, err)
+			log.Printf("[Chat] Failed to load timezone %q, defaulting to UTC: %v", a.cfg.Timezone, err)
 		}
 	}
 	currentTime := time.Now().In(loc)
@@ -106,6 +107,8 @@ func (a *CalendarAgent) Chat(ctx context.Context, message string) (string, error
 		userID = "default_user"
 	}
 
+	log.Printf("[Chat] Processing message for user_id=%q message_len=%d", userID, len(message))
+
 	var historyStr string
 	if msgs, err := a.memory.GetMessages(ctx, userID, 10); err == nil && len(msgs) > 0 {
 		historyStr = "Conversation History:\n"
@@ -113,6 +116,8 @@ func (a *CalendarAgent) Chat(ctx context.Context, message string) (string, error
 			historyStr += fmt.Sprintf("- %s: %s\n", m.Role, m.Content)
 		}
 		historyStr += "\n"
+	} else if err != nil {
+		log.Printf("[Chat] WARNING: Failed to load conversation history for user_id=%q: %v", userID, err)
 	}
 
 	augmented := fmt.Sprintf(`Current Date and Time: %s (Timezone: %s)
@@ -122,24 +127,29 @@ When you are asked to update an event, you should first use the "search_events" 
 
 User: %s`, currentTimeStr, timezoneName, historyStr, message)
 
+	log.Printf("[Chat] Invoking LangChain agent executor for user_id=%q", userID)
 	result, err := chains.Run(ctx, a.executor, augmented)
 	if err != nil {
+		log.Printf("[Chat] ERROR: chains.Run failed for user_id=%q — %v", userID, err)
+		log.Printf("[Chat] ERROR: This is likely caused by a calendar backend (gRPC) error propagating through the tool chain. Check calendar tool logs above for details.")
 		return "", fmt.Errorf("failed to process message: %w", err)
 	}
+
+	log.Printf("[Chat] Agent returned response for user_id=%q response_len=%d", userID, len(result))
 
 	if err := a.memory.SaveMessage(ctx, userID, types.Message{
 		Role:      "user",
 		Content:   message,
 		Timestamp: time.Now(),
 	}); err != nil {
-		log.Printf("failed to save user message: %v", err)
+		log.Printf("[Chat] WARNING: Failed to save user message for user_id=%q: %v", userID, err)
 	}
 	if err := a.memory.SaveMessage(ctx, userID, types.Message{
 		Role:      "assistant",
 		Content:   result,
 		Timestamp: time.Now(),
 	}); err != nil {
-		log.Printf("failed to save assistant message: %v", err)
+		log.Printf("[Chat] WARNING: Failed to save assistant message for user_id=%q: %v", userID, err)
 	}
 
 	return result, nil

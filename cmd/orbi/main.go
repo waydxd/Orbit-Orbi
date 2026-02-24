@@ -1,9 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"context"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -31,7 +28,6 @@ func main() {
 	model := getEnv("OPENAI_MODEL", "gpt-3.5-turbo")
 	agentAddr := getEnv("AGENT_GRPC_ADDR", getEnv("AGENT_SERVICE_ADDR", "0.0.0.0:50042"))
 	httpAddr := getEnv("AGENT_HTTP_ADDR", "0.0.0.0:8088")
-	interactive := getEnv("AGENT_MODE", "interactive") == "interactive"
 	baseURL := getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1/")
 	redisAddr := getEnv("REDIS_ADDR", "")
 	redisPassword := getSecretEnv("REDIS_PASSWORD", "")
@@ -107,52 +103,10 @@ func main() {
 	agentServer.SetReady(true, "ready; calendar client will connect on demand")
 	log.Println("Agent is ready to accept connections")
 
-	// If interactive mode, start CLI
-	if interactive {
-		log.Println("Type 'exit' or 'quit' to exit the chat.")
-		log.Println()
+	log.Println("Agent running in server mode. Clients can connect via gRPC to process messages.")
 
-		// Start interactive chat loop
-		reader := bufio.NewReader(os.Stdin)
-		ctx := context.Background()
-
-		for {
-			fmt.Print("You: ")
-			input, err := reader.ReadString('\n')
-			if err != nil {
-				log.Printf("Error reading input: %v", err)
-				continue
-			}
-
-			input = strings.TrimSpace(input)
-			if input == "" {
-				continue
-			}
-
-			// Check for exit commands
-			if strings.ToLower(input) == "exit" || strings.ToLower(input) == "quit" {
-				log.Println("Goodbye!")
-				break
-			}
-
-			// Process the message with the agent
-			response, err := ag.Chat(ctx, input)
-			if err != nil {
-				log.Printf("Error processing message: %v", err)
-				continue
-			}
-
-			fmt.Printf("Orbi: %s\n\n", response)
-		}
-
-		grpcServer.Stop()
-	} else {
-		log.Println("Agent running in server mode only (no interactive CLI).")
-		log.Println("Clients can connect via gRPC to process messages.")
-
-		// Keep the server running indefinitely
-		select {}
-	}
+	// Keep the server running indefinitely
+	select {}
 }
 
 // getSecretEnv retrieves a sensitive environment variable from a file

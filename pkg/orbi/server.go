@@ -3,6 +3,7 @@ package orbi
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	pb "github.com/waydxd/Orbit-Orbi/proto"
@@ -40,7 +41,10 @@ func NewAgentServer(agent Agent) *AgentServer {
 // ProcessMessage implements the ProcessMessage RPC
 // This allows external clients (like Core/UI) to send messages to the agent
 func (s *AgentServer) ProcessMessage(ctx context.Context, req *pb.ProcessMessageRequest) (*pb.ProcessMessageResponse, error) {
+	log.Printf("[ProcessMessage] Received: user_id=%q session_id=%q message=%q", req.GetUserId(), req.GetSessionId(), req.GetMessage())
+
 	if !s.isReady {
+		log.Printf("[ProcessMessage] Agent not ready: %s", s.readyReason)
 		return &pb.ProcessMessageResponse{
 			Response:  "",
 			Success:   false,
@@ -51,6 +55,7 @@ func (s *AgentServer) ProcessMessage(ctx context.Context, req *pb.ProcessMessage
 
 	// Enforce stateless contract: require user_id; session_id optional per proto
 	if req.GetUserId() == "" {
+		log.Printf("[ProcessMessage] Rejected: missing user_id")
 		return &pb.ProcessMessageResponse{
 			Response:  "",
 			Success:   false,
@@ -69,6 +74,7 @@ func (s *AgentServer) ProcessMessage(ctx context.Context, req *pb.ProcessMessage
 	// Process the message through the agent
 	response, err := s.agent.Chat(ctx, req.Message)
 	if err != nil {
+		log.Printf("[ProcessMessage] ERROR: Chat failed for user_id=%q session_id=%q — %v", req.GetUserId(), req.GetSessionId(), err)
 		return &pb.ProcessMessageResponse{
 			Response:  "",
 			Success:   false,
@@ -76,6 +82,8 @@ func (s *AgentServer) ProcessMessage(ctx context.Context, req *pb.ProcessMessage
 			SessionId: req.SessionId,
 		}, nil
 	}
+
+	log.Printf("[ProcessMessage] OK: user_id=%q session_id=%q response_len=%d", req.GetUserId(), req.GetSessionId(), len(response))
 
 	// Track session if provided
 	if req.SessionId != "" {
@@ -92,7 +100,7 @@ func (s *AgentServer) ProcessMessage(ctx context.Context, req *pb.ProcessMessage
 
 // GetAgentState implements the GetAgentState RPC
 // This allows clients to check the health and readiness of the agent
-func (s *AgentServer) GetAgentState(ctx context.Context, req *pb.GetAgentStateRequest) (*pb.GetAgentStateResponse, error) {
+func (s *AgentServer) GetAgentState(context.Context, *pb.GetAgentStateRequest) (*pb.GetAgentStateResponse, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

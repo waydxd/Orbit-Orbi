@@ -87,7 +87,7 @@ make build
 
 ### Running
 
-Run the chatbot:
+Run the agent server:
 ```bash
 make run
 ```
@@ -97,22 +97,8 @@ Or run directly:
 ./bin/orbi
 ```
 
-### Interactive Chat
-
-Once running, you can interact with Orbi using natural language:
-
-```
-You: Schedule a meeting for tomorrow at 2pm
-Orbi: I've created a meeting for tomorrow at 2:00 PM.
-
-You: What events do I have this week?
-Orbi: You have 3 events scheduled this week...
-
-You: Find me a 1-hour slot next week
-Orbi: I found several available slots next week...
-```
-
-Type `exit` or `quit` to exit the chat.
+The agent runs in server mode only. Clients connect via gRPC to send messages.
+Use the `/livez` and `/readyz` HTTP endpoints (default port `8088`) to check health and readiness.
 
 ## Development
 
@@ -169,6 +155,74 @@ User Input → Orbi Agent → LangChain Tools → gRPC Client → Calendar Servi
                 ↓                                              ↓
             AI Response ← Process Response ← gRPC Response ← Calendar Data
 ```
+
+### Agent Workflow Diagram
+
+```mermaid
+graph TD
+    A["User Input"] -->|Message| B["Chat Method"]
+    B -->|Initialize| C{Agent<br/>Initialized?}
+    C -->|No| D["Initialize Agent<br/>- Load Memory<br/>- Initialize LLM<br/>- Create Tools"]
+    C -->|Yes| E["Get User ID<br/>from Context"]
+    D --> E
+    E -->|Retrieve| F["Load Conversation<br/>History<br/>from Memory"]
+    F --> G["Build Prompt<br/>- Current Time<br/>- Timezone<br/>- History<br/>- User Message"]
+    G -->|Execute| H["LangChain Agent<br/>Executor<br/>Max 5 Iterations"]
+    H -->|Invoke| I["Calendar Tools"]
+    I --> J{Which Tool?}
+    J -->|Create| K["Create Event Tool<br/>via gRPC"]
+    J -->|Read| L["Get Events Tool<br/>via gRPC"]
+    J -->|Update| M["Update Event Tool<br/>via gRPC"]
+    J -->|Delete| N["Delete Event Tool<br/>via gRPC"]
+    J -->|Search| O["Search Events Tool<br/>via gRPC"]
+    J -->|Slots| P["Get Available Slots<br/>Tool via gRPC"]
+    K --> Q["gRPC Client"]
+    L --> Q
+    M --> Q
+    N --> Q
+    O --> Q
+    P --> Q
+    Q -->|Communicate| R["Calendar Service<br/>gRPC Server"]
+    R -->|Response| Q
+    Q -->|Tool Output| H
+    H -->|Loop if needed| I
+    H -->|Final Result| S["Format Response"]
+    S -->|Save| T["Save User Message<br/>to Memory"]
+    T -->|Save| U["Save Assistant<br/>Response<br/>to Memory"]
+    U -->|Return| V["Response to User"]
+    V -->|Display| W["Output Message"]
+    
+    style A fill:#e1f5ff
+    style B fill:#fff3e0
+    style D fill:#f3e5f5
+    style H fill:#fff9c4
+    style R fill:#ffebee
+    style W fill:#c8e6c9
+```
+
+#### Agent Components
+
+- **Memory System**: Maintains conversation history (Redis or In-Memory)
+  - Stores user and assistant messages
+  - Retrieves last 10 messages for context
+  
+- **LLM (OpenAI)**: Processes natural language
+  - Receives augmented prompts with context
+  - Makes decisions about which tools to use
+  - Returns AI-generated responses
+  
+- **Calendar Tools**: LangChain tool implementations
+  - Create, read, update, delete events
+  - Search for events
+  - Find available time slots
+  
+- **gRPC Client**: Communicates with Calendar Service
+  - Translates tool calls to gRPC requests
+  - Handles Protocol Buffers serialization
+  
+- **User Session Context**: Extracted from gRPC metadata
+  - User ID for personalization
+  - Timezone for time-aware operations
 
 ## Extending Orbi
 

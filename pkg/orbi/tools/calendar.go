@@ -11,7 +11,9 @@ import (
 	"github.com/tmc/langchaingo/tools"
 	"github.com/waydxd/Orbit-Orbi/pkg/grpcclient"
 	pb "github.com/waydxd/Orbit-Orbi/proto"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // loadTimezone loads the specified timezone location. If the timezone is empty
@@ -100,6 +102,7 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 
 	resp, err := t.client.CreateEvent(ctx, req)
 	if err != nil {
+		logGRPCError("create_event", err)
 		return "", fmt.Errorf("failed to create event: %w", err)
 	}
 
@@ -147,6 +150,7 @@ func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) 
 
 	resp, err := t.client.GetEvents(ctx, req)
 	if err != nil {
+		logGRPCError("get_events", err)
 		return "", fmt.Errorf("failed to get events: %w", err)
 	}
 
@@ -235,6 +239,7 @@ func (t *updateEventTool) Call(ctx context.Context, input string) (string, error
 
 	resp, err := t.client.UpdateEvent(ctx, req)
 	if err != nil {
+		logGRPCError("update_event", err)
 		return "", fmt.Errorf("failed to update event: %w", err)
 	}
 
@@ -269,6 +274,7 @@ func (t *deleteEventTool) Call(ctx context.Context, input string) (string, error
 
 	resp, err := t.client.DeleteEvent(ctx, req)
 	if err != nil {
+		logGRPCError("delete_event", err)
 		return "", fmt.Errorf("failed to delete event: %w", err)
 	}
 
@@ -322,6 +328,7 @@ func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string,
 
 	resp, err := t.client.GetAvailableSlots(ctx, req)
 	if err != nil {
+		logGRPCError("availability", err)
 		return "", fmt.Errorf("failed to get available slots: %w", err)
 	}
 
@@ -359,6 +366,7 @@ func (t *searchEventsTool) Call(ctx context.Context, input string) (string, erro
 
 	resp, err := t.client.GetEvents(ctx, req)
 	if err != nil {
+		logGRPCError("search_events", err)
 		return "", fmt.Errorf("failed to get events: %w", err)
 	}
 
@@ -406,4 +414,20 @@ func getUserID(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+
+// logGRPCError logs a detailed breakdown of a gRPC error including the status
+// code and message so it's easy to trace calendar backend failures.
+func logGRPCError(tool string, err error) {
+	if err == nil {
+		return
+	}
+	if st, ok := status.FromError(err); ok {
+		log.Printf("[CalendarTool:%s] gRPC error — code=%s message=%q", tool, st.Code(), st.Message())
+		if st.Code() == codes.Unavailable || st.Code() == codes.DeadlineExceeded {
+			log.Printf("[CalendarTool:%s] HINT: Calendar backend appears to be unreachable or slow. Check that the calendar service is running and healthy.", tool)
+		}
+	} else {
+		log.Printf("[CalendarTool:%s] non-gRPC error — %v", tool, err)
+	}
 }
