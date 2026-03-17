@@ -106,6 +106,15 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 		return "", fmt.Errorf("failed to create event: %w", err)
 	}
 
+	if resp == nil {
+		log.Printf("[create_event] nil response returned for user_id=%q", getUserID(ctx))
+		return "", fmt.Errorf("create event returned nil response")
+	}
+	if resp.Event == nil {
+		log.Printf("[create_event] response contains nil event for user_id=%q", getUserID(ctx))
+		return "", fmt.Errorf("create event returned response with nil event")
+	}
+
 	return fmt.Sprintf("Event created: %s (ID: %s)", resp.Event.Title, resp.Event.Id), nil
 }
 
@@ -241,6 +250,15 @@ func (t *updateEventTool) Call(ctx context.Context, input string) (string, error
 	if err != nil {
 		logGRPCError("update_event", err)
 		return "", fmt.Errorf("failed to update event: %w", err)
+	}
+
+	if resp == nil {
+		log.Printf("[update_event] nil response returned — event_id=%q user_id=%q", p.ID, getUserID(ctx))
+		return "", fmt.Errorf("update event returned nil response for id=%q", p.ID)
+	}
+	if resp.Event == nil {
+		log.Printf("[update_event] event not found — event_id=%q user_id=%q", p.ID, getUserID(ctx))
+		return "", fmt.Errorf("event not found: id=%q", p.ID)
 	}
 
 	return fmt.Sprintf("Event updated: %s", resp.Event.Title), nil
