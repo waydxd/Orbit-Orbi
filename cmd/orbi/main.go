@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -31,8 +32,11 @@ func main() {
 	baseURL := getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1/")
 	redisAddr := getEnv("REDIS_ADDR", "")
 	redisPassword := getSecretEnv("REDIS_PASSWORD", "")
-	redisDB := 0 // Default to DB 0
-
+	redisDB, err := strconv.Atoi(getEnv("REDIS_DB", "0")) // Default to DB 0
+	if err != nil {
+		log.Fatalf("Invalid REDIS_DB value: %v", err)
+	}
+	timezone := getEnv("AGENT_TIMEZONE", "UTC")
 	if openAIKey == "" {
 		log.Println("Warning: OPENAI_API_KEY not set. Agent will not function without it.")
 		log.Println("If you're using Docker secrets, set OPENAI_API_KEY_FILE to the secret file path.")
@@ -48,6 +52,7 @@ func main() {
 		RedisAddr:           redisAddr,
 		RedisPassword:       redisPassword,
 		RedisDB:             redisDB,
+		Timezone:            timezone,
 	}
 
 	// Initialize the Orbi agent
