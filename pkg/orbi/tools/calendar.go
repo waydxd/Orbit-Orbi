@@ -49,6 +49,23 @@ func NewCalendarTools(calendarServiceAddr string, timezone string) ([]tools.Tool
 	}, nil
 }
 
+// parseTimeFlexible attempts to parse a time string using multiple formats
+func parseTimeFlexible(timeStr string, loc *time.Location) (time.Time, error) {
+	// Primary format: "YYYY-MM-DD HH:MM:SS"
+	t, err := time.ParseInLocation("2006-01-02 15:04:05", timeStr, loc)
+	if err == nil {
+		return t, nil
+	}
+
+    // RFC3339 format: "YYYY-MM-DDTHH:MM:SSZ"
+	t, err = time.Parse(time.RFC3339, timeStr)
+	if err == nil {
+		return t.In(loc), nil
+	}
+
+	return time.Time{}, err
+}
+
 // createEventTool wraps the CreateEvent gRPC call as a langchain tool
 type createEventTool struct {
 	client *grpcclient.CalendarClient
@@ -81,11 +98,11 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 		return "", fmt.Errorf("invalid create event payload: %w", err)
 	}
 
-	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
+	startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid start_time format: %w", err)
 	}
-	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
+	endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid end_time format: %w", err)
 	}
@@ -142,11 +159,11 @@ func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) 
 		return "", fmt.Errorf("invalid get events payload: %w", err)
 	}
 
-	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
+	startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid start_time format: %w", err)
 	}
-	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
+	endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid end_time format: %w", err)
 	}
@@ -232,14 +249,14 @@ func (t *updateEventTool) Call(ctx context.Context, input string) (string, error
 	}
 
 	if p.StartTime != "" {
-		startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
+		startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 		if err != nil {
 			return "", fmt.Errorf("invalid start_time format: %w", err)
 		}
 		req.StartTime = startTime.Unix()
 	}
 	if p.EndTime != "" {
-		endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
+		endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 		if err != nil {
 			return "", fmt.Errorf("invalid end_time format: %w", err)
 		}
@@ -328,11 +345,11 @@ func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string,
 		return "", fmt.Errorf("invalid get available slots payload: %w", err)
 	}
 
-	startTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.StartTime, t.loc)
+	startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid start_time format: %w", err)
 	}
-	endTime, err := time.ParseInLocation("2006-01-02 15:04:05", p.EndTime, t.loc)
+	endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 	if err != nil {
 		return "", fmt.Errorf("invalid end_time format: %w", err)
 	}
