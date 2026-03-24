@@ -57,7 +57,7 @@ func parseTimeFlexible(timeStr string, loc *time.Location) (time.Time, error) {
 		return t, nil
 	}
 
-    // RFC3339 format: "YYYY-MM-DDTHH:MM:SSZ"
+	// RFC3339 format: "YYYY-MM-DDTHH:MM:SSZ"
 	t, err = time.Parse(time.RFC3339, timeStr)
 	if err == nil {
 		return t.In(loc), nil
