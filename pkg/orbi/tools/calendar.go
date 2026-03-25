@@ -63,6 +63,11 @@ func parseTimeFlexible(timeStr string, loc *time.Location) (time.Time, error) {
 		return t.In(loc), nil
 	}
 
+	// RFC3339Nano format: supports fractional seconds (e.g., "YYYY-MM-DDTHH:MM:SS.sssZ")
+	t, err = time.Parse(time.RFC3339Nano, timeStr)
+	if err == nil {
+		return t.In(loc), nil
+	}
 	return time.Time{}, err
 }
 
