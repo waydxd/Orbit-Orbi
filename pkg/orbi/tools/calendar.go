@@ -19,13 +19,17 @@ import (
 // loadTimezone loads the specified timezone location. If the timezone is empty
 // or loading fails, it returns UTC as a fallback.
 func loadTimezone(timezone string) *time.Location {
+	defaultLoc, _ := time.LoadLocation("Asia/Hong_Kong")
+	if defaultLoc == nil {
+		defaultLoc = time.FixedZone("HKT", 8*60*60)
+	}
 	if timezone == "" {
-		return time.UTC
+		return defaultLoc
 	}
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
-		log.Printf("failed to load timezone %q, defaulting to UTC: %v", timezone, err)
-		return time.UTC
+		log.Printf("failed to load timezone %q, defaulting to %q: %v", timezone, defaultLoc.String(), err)
+		return defaultLoc
 	}
 	return loc
 }
@@ -34,7 +38,7 @@ func loadTimezone(timezone string) *time.Location {
 func NewCalendarTools(calendarServiceAddr string, timezone string) ([]tools.Tool, error) {
 	calendarClient, err := grpcclient.NewCalendarClient(calendarServiceAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create calendar client: %w", err)
+		return nil, fmt.Errorf("failed to create calendar client: %v", err)
 	}
 
 	loc := loadTimezone(timezone)
@@ -49,21 +53,27 @@ func NewCalendarTools(calendarServiceAddr string, timezone string) ([]tools.Tool
 	}, nil
 }
 
-// parseTimeFlexible attempts to parse a time string using multiple formats
+// parseTimeFlexible attempts to parse a time string using multiple formats.
+// If the input ends with "Z", we first try interpreting the wall-clock value
+// in the configured user timezone to avoid unintended UTC shifts from LLM output.
 func parseTimeFlexible(timeStr string, loc *time.Location) (time.Time, error) {
-	// Primary format: "YYYY-MM-DD HH:MM:SS"
-	t, err := time.ParseInLocation("2006-01-02 15:04:05", timeStr, loc)
+	// 1. If the AI appended a 'Z' (UTC marker), strip it off so we can treat it as local time.
+	cleanStr := strings.TrimSuffix(timeStr, "Z")
+
+	// 2. Try parsing it as an ISO string but in the user's specific location (HKT)
+	t, err := time.ParseInLocation("2006-01-02T15:04:05", cleanStr, loc)
 	if err == nil {
 		return t, nil
 	}
 
-	// RFC3339 format: "YYYY-MM-DDTHH:MM:SSZ"
-	t, err = time.Parse(time.RFC3339, timeStr)
+	// 3. Try parsing it as the standard string but in the user's specific location
+	t, err = time.ParseInLocation("2006-01-02 15:04:05", cleanStr, loc)
 	if err == nil {
-		return t.In(loc), nil
+		return t, nil
 	}
 
-	return time.Time{}, err
+	// Fallback just in case
+	return time.Parse(time.RFC3339, timeStr)
 }
 
 // createEventTool wraps the CreateEvent gRPC call as a langchain tool
@@ -85,6 +95,9 @@ func (t *createEventTool) Description() string {
 }
 
 func (t *createEventTool) Call(ctx context.Context, input string) (string, error) {
+	if t.client == nil {
+		return fmt.Sprintf("Error: " + "t.client is unexpectedly nil"), nil
+	}
 	type payload struct {
 		Title       string   `json:"title"`
 		Description string   `json:"description"`
@@ -95,16 +108,16 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 	}
 	var p payload
 	if err := json.Unmarshal([]byte(input), &p); err != nil {
-		return "", fmt.Errorf("invalid create event payload: %w", err)
+		return fmt.Sprintf("Error: " + "invalid create event payload: %v", err), nil
 	}
 
 	startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 	if err != nil {
-		return "", fmt.Errorf("invalid start_time format: %w", err)
+		return fmt.Sprintf("Error: " + "invalid start_time format: %v", err), nil
 	}
 	endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 	if err != nil {
-		return "", fmt.Errorf("invalid end_time format: %w", err)
+		return fmt.Sprintf("Error: " + "invalid end_time format: %v", err), nil
 	}
 
 	req := &pb.CreateEventRequest{
@@ -120,16 +133,14 @@ func (t *createEventTool) Call(ctx context.Context, input string) (string, error
 	resp, err := t.client.CreateEvent(ctx, req)
 	if err != nil {
 		logGRPCError("create_event", err)
-		return "", fmt.Errorf("failed to create event: %w", err)
+		return fmt.Sprintf("Failed to create event: %v", err), nil
 	}
 
 	if resp == nil {
-		log.Printf("[create_event] nil response returned for user_id=%q", getUserID(ctx))
-		return "", fmt.Errorf("create event returned nil response")
+		return "Action is pending confirmation.", nil
 	}
 	if resp.Event == nil {
-		log.Printf("[create_event] response contains nil event for user_id=%q", getUserID(ctx))
-		return "", fmt.Errorf("create event returned response with nil event")
+		return "Event proposed and pending user confirmation in the UI.", nil
 	}
 
 	return fmt.Sprintf("Event created: %s (ID: %s)", resp.Event.Title, resp.Event.Id), nil
@@ -150,22 +161,25 @@ func (t *getEventsTool) Description() string {
 }
 
 func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) {
+	if t.client == nil {
+		return fmt.Sprintf("Error: " + "t.client is unexpectedly nil"), nil
+	}
 	type payload struct {
 		StartTime string `json:"start_time"`
 		EndTime   string `json:"end_time"`
 	}
 	var p payload
 	if err := json.Unmarshal([]byte(input), &p); err != nil {
-		return "", fmt.Errorf("invalid get events payload: %w", err)
+		return fmt.Sprintf("Error: " + "invalid get events payload: %v", err), nil
 	}
 
 	startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 	if err != nil {
-		return "", fmt.Errorf("invalid start_time format: %w", err)
+		return fmt.Sprintf("Error: " + "invalid start_time format: %v", err), nil
 	}
 	endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 	if err != nil {
-		return "", fmt.Errorf("invalid end_time format: %w", err)
+		return fmt.Sprintf("Error: " + "invalid end_time format: %v", err), nil
 	}
 
 	req := &pb.GetEventsRequest{
@@ -177,7 +191,11 @@ func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) 
 	resp, err := t.client.GetEvents(ctx, req)
 	if err != nil {
 		logGRPCError("get_events", err)
-		return "", fmt.Errorf("failed to get events: %w", err)
+		return fmt.Sprintf("Error: failed to get events in database: %v", err), nil
+	}
+
+	if resp == nil {
+		return fmt.Sprintf("Error: " + "get_events returned nil response"), nil
 	}
 
 	if len(resp.Events) == 0 {
@@ -190,8 +208,8 @@ func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) 
 			"id":          event.Id,
 			"title":       event.Title,
 			"description": event.Description,
-			"start_time":  time.Unix(event.StartTime, 0).Format(time.RFC3339),
-			"end_time":    time.Unix(event.EndTime, 0).Format(time.RFC3339),
+			"start_time":  time.Unix(event.StartTime, 0).In(t.loc).Format("2006-01-02 15:04:05"),
+			"end_time":    time.Unix(event.EndTime, 0).In(t.loc).Format("2006-01-02 15:04:05"),
 			"location":    event.Location,
 			"attendees":   event.Attendees,
 		}
@@ -199,7 +217,7 @@ func (t *getEventsTool) Call(ctx context.Context, input string) (string, error) 
 
 	jsonBytes, err := json.Marshal(eventDetails)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal event details: %w", err)
+		return fmt.Sprintf("Error: " + "failed to marshal event details: %v", err), nil
 	}
 
 	return string(jsonBytes), nil
@@ -214,17 +232,22 @@ type updateEventTool struct {
 func (t *updateEventTool) Name() string { return "update_event" }
 
 func (t *updateEventTool) Description() string {
-	return `Update an existing calendar event. You MUST know the event ID to use this tool. If you don't know the event ID, use the "search_events" tool first. Input should be a JSON object with fields:
-	- id: string (required)
-	- title: string (optional)
-	- description: string (optional)
-	- start_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (optional)
-	- end_time: datetime string in format "YYYY-MM-DD HH:MM:SS" (optional)
-	- location: string (optional)
-	- attendees: array of email addresses (optional)`
+	return `Update an existing calendar event. Only use this when user explicitly asks to modify an existing event.
+	You MUST provide the event id. Do NOT update by title alone; duplicate titles are allowed.
+	Input should be a JSON object with fields:
+        - id: string (required)
+        - title: string (optional, leave null or empty to keep original)
+        - description: string (optional, leave null or empty to keep original)
+        - start_time: datetime string in format "YYYY-MM-DD HH:MM:SS" or ISO8601 (optional, leave null or empty to keep original)
+        - end_time: datetime string in format "YYYY-MM-DD HH:MM:SS" or ISO8601 (optional, leave null or empty to keep original)
+        - location: string (optional, leave null or empty to keep original)
+        - attendees: array of email addresses (optional, leave empty to keep original)`
 }
 
 func (t *updateEventTool) Call(ctx context.Context, input string) (string, error) {
+	if t.client == nil {
+		return fmt.Sprintf("Error: " + "t.client is unexpectedly nil"), nil
+	}
 	type payload struct {
 		ID          string   `json:"id"`
 		Title       string   `json:"title"`
@@ -236,7 +259,46 @@ func (t *updateEventTool) Call(ctx context.Context, input string) (string, error
 	}
 	var p payload
 	if err := json.Unmarshal([]byte(input), &p); err != nil {
-		return "", fmt.Errorf("invalid update event payload: %w", err)
+		return fmt.Sprintf("Error: " + "invalid update event payload: %v", err), nil
+	}
+
+	// If any field is empty, retrieve the original event to preserve existing data
+	if p.Title == "" || p.Description == "" || p.Location == "" || p.StartTime == "" || p.EndTime == "" {
+		reqGet := &pb.GetEventsRequest{
+			UserId:    getUserID(ctx),
+			StartTime: time.Now().Add(-365 * 24 * time.Hour).Unix(),
+			EndTime:   time.Now().Add(365 * 24 * time.Hour).Unix(),
+		}
+		respGet, errGet := t.client.GetEvents(ctx, reqGet)
+		if errGet == nil && respGet != nil {
+			for _, ev := range respGet.Events {
+				if ev.Id == p.ID {
+					if p.Title == "" {
+						p.Title = ev.Title
+					}
+					if p.Description == "" {
+						p.Description = ev.Description
+					}
+					if p.Location == "" {
+						p.Location = ev.Location
+					}
+					if p.StartTime == "" && ev.StartTime != 0 {
+						p.StartTime = time.Unix(ev.StartTime, 0).Format(time.RFC3339)
+					}
+					if p.EndTime == "" && ev.EndTime != 0 {
+						p.EndTime = time.Unix(ev.EndTime, 0).Format(time.RFC3339)
+					}
+					if len(p.Attendees) == 0 {
+						p.Attendees = ev.Attendees
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if strings.TrimSpace(p.ID) == "" {
+		return "Error: update_event requires a non-empty event id. Use search_events first to find the exact event.", nil
 	}
 
 	req := &pb.UpdateEventRequest{
@@ -251,14 +313,14 @@ func (t *updateEventTool) Call(ctx context.Context, input string) (string, error
 	if p.StartTime != "" {
 		startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 		if err != nil {
-			return "", fmt.Errorf("invalid start_time format: %w", err)
+			return fmt.Sprintf("Error: " + "invalid start_time format: %v", err), nil
 		}
 		req.StartTime = startTime.Unix()
 	}
 	if p.EndTime != "" {
 		endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 		if err != nil {
-			return "", fmt.Errorf("invalid end_time format: %w", err)
+			return fmt.Sprintf("Error: " + "invalid end_time format: %v", err), nil
 		}
 		req.EndTime = endTime.Unix()
 	}
@@ -266,16 +328,14 @@ func (t *updateEventTool) Call(ctx context.Context, input string) (string, error
 	resp, err := t.client.UpdateEvent(ctx, req)
 	if err != nil {
 		logGRPCError("update_event", err)
-		return "", fmt.Errorf("failed to update event: %w", err)
+		return fmt.Sprintf("Failed to update event: %v", err), nil
 	}
 
 	if resp == nil {
-		log.Printf("[update_event] nil response returned — event_id=%q user_id=%q", p.ID, getUserID(ctx))
-		return "", fmt.Errorf("update event returned nil response for id=%q", p.ID)
+		return "Action is pending confirmation.", nil
 	}
 	if resp.Event == nil {
-		log.Printf("[update_event] event not found — event_id=%q user_id=%q", p.ID, getUserID(ctx))
-		return "", fmt.Errorf("event not found: id=%q", p.ID)
+		return "Event proposed and pending user confirmation in the UI.", nil
 	}
 
 	return fmt.Sprintf("Event updated: %s", resp.Event.Title), nil
@@ -294,12 +354,15 @@ func (t *deleteEventTool) Description() string {
 }
 
 func (t *deleteEventTool) Call(ctx context.Context, input string) (string, error) {
+	if t.client == nil {
+		return fmt.Sprintf("Error: " + "t.client is unexpectedly nil"), nil
+	}
 	type payload struct {
 		ID string `json:"id"`
 	}
 	var p payload
 	if err := json.Unmarshal([]byte(input), &p); err != nil {
-		return "", fmt.Errorf("invalid delete event payload: %w", err)
+		return fmt.Sprintf("Error: " + "invalid delete event payload: %v", err), nil
 	}
 
 	req := &pb.DeleteEventRequest{
@@ -310,7 +373,11 @@ func (t *deleteEventTool) Call(ctx context.Context, input string) (string, error
 	resp, err := t.client.DeleteEvent(ctx, req)
 	if err != nil {
 		logGRPCError("delete_event", err)
-		return "", fmt.Errorf("failed to delete event: %w", err)
+		return fmt.Sprintf("Error: failed to delete event in database: %v", err), nil
+	}
+
+	if resp == nil {
+		return fmt.Sprintf("Error: " + "delete_event returned nil response"), nil
 	}
 
 	if resp.Success {
@@ -335,6 +402,9 @@ func (t *getAvailableSlotsTool) Description() string {
 }
 
 func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string, error) {
+	if t.client == nil {
+		return fmt.Sprintf("Error: " + "t.client is unexpectedly nil"), nil
+	}
 	type payload struct {
 		StartTime string `json:"start_time"`
 		EndTime   string `json:"end_time"`
@@ -342,16 +412,16 @@ func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string,
 	}
 	var p payload
 	if err := json.Unmarshal([]byte(input), &p); err != nil {
-		return "", fmt.Errorf("invalid get available slots payload: %w", err)
+		return fmt.Sprintf("Error: " + "invalid get available slots payload: %v", err), nil
 	}
 
 	startTime, err := parseTimeFlexible(p.StartTime, t.loc)
 	if err != nil {
-		return "", fmt.Errorf("invalid start_time format: %w", err)
+		return fmt.Sprintf("Error: " + "invalid start_time format: %v", err), nil
 	}
 	endTime, err := parseTimeFlexible(p.EndTime, t.loc)
 	if err != nil {
-		return "", fmt.Errorf("invalid end_time format: %w", err)
+		return fmt.Sprintf("Error: " + "invalid end_time format: %v", err), nil
 	}
 
 	req := &pb.GetAvailableSlotsRequest{
@@ -364,7 +434,7 @@ func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string,
 	resp, err := t.client.GetAvailableSlots(ctx, req)
 	if err != nil {
 		logGRPCError("availability", err)
-		return "", fmt.Errorf("failed to get available slots: %w", err)
+		return fmt.Sprintf("Error: failed to get available slots in database: %v", err), nil
 	}
 
 	return fmt.Sprintf("Found %d available slots", len(resp.Slots)), nil
@@ -383,12 +453,16 @@ func (t *searchEventsTool) Description() string {
 }
 
 func (t *searchEventsTool) Call(ctx context.Context, input string) (string, error) {
+	if t.client == nil {
+		return fmt.Sprintf("Error: " + "t.client is unexpectedly nil"), nil
+	}
 	type payload struct {
 		Query string `json:"query"`
 	}
 	var p payload
 	if err := json.Unmarshal([]byte(input), &p); err != nil {
-		return "", fmt.Errorf("invalid search events payload: %w", err)
+
+		return fmt.Sprintf("Error: " + "invalid search events payload: %v", err), nil
 	}
 
 	// For now, we'll just use the get_events tool with a wide time range
@@ -402,7 +476,7 @@ func (t *searchEventsTool) Call(ctx context.Context, input string) (string, erro
 	resp, err := t.client.GetEvents(ctx, req)
 	if err != nil {
 		logGRPCError("search_events", err)
-		return "", fmt.Errorf("failed to get events: %w", err)
+		return fmt.Sprintf("Error: failed to search events in database: %v", err), nil
 	}
 
 	queryLower := strings.ToLower(p.Query)
@@ -426,8 +500,8 @@ func (t *searchEventsTool) Call(ctx context.Context, input string) (string, erro
 			"id":          event.Id,
 			"title":       event.Title,
 			"description": event.Description,
-			"start_time":  time.Unix(event.StartTime, 0).Format(time.RFC3339),
-			"end_time":    time.Unix(event.EndTime, 0).Format(time.RFC3339),
+			"start_time":  time.Unix(event.StartTime, 0).In(loadTimezone("Asia/Hong_Kong")).Format("2006-01-02 15:04:05"),
+			"end_time":    time.Unix(event.EndTime, 0).In(loadTimezone("Asia/Hong_Kong")).Format("2006-01-02 15:04:05"),
 			"location":    event.Location,
 			"attendees":   event.Attendees,
 		}
@@ -435,7 +509,7 @@ func (t *searchEventsTool) Call(ctx context.Context, input string) (string, erro
 
 	jsonBytes, err := json.Marshal(eventDetails)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal event details: %w", err)
+		return fmt.Sprintf("Error: " + "failed to marshal event details: %v", err), nil
 	}
 
 	return string(jsonBytes), nil
