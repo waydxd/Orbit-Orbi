@@ -72,8 +72,19 @@ func parseTimeFlexible(timeStr string, loc *time.Location) (time.Time, error) {
 		return t, nil
 	}
 
-	// Fallback just in case
-	return time.Parse(time.RFC3339, timeStr)
+	// RFC3339 format: "YYYY-MM-DDTHH:MM:SSZ"
+	t, err = time.Parse(time.RFC3339, timeStr)
+	if err == nil {
+		return t.In(loc), nil
+	}
+
+	// RFC3339Nano format: supports fractional seconds (e.g., "YYYY-MM-DDTHH:MM:SS.sssZ")
+	t, err = time.Parse(time.RFC3339Nano, timeStr)
+	if err == nil {
+		return t.In(loc), nil
+	}
+
+	return time.Time{}, err
 }
 
 // createEventTool wraps the CreateEvent gRPC call as a langchain tool
