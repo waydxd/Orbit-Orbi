@@ -38,7 +38,7 @@ func loadTimezone(timezone string) *time.Location {
 func NewCalendarTools(calendarServiceAddr string, timezone string) ([]tools.Tool, error) {
 	calendarClient, err := grpcclient.NewCalendarClient(calendarServiceAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create calendar client: %v", err)
+		return nil, fmt.Errorf("failed to create calendar client: %w", err)
 	}
 
 	loc := loadTimezone(timezone)
