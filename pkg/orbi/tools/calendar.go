@@ -447,6 +447,9 @@ func (t *getAvailableSlotsTool) Call(ctx context.Context, input string) (string,
 		logGRPCError("availability", err)
 		return fmt.Sprintf("Error: failed to get available slots in database: %v", err), nil
 	}
+	if resp == nil {
+		return "Error: calendar service returned nil response for available slots", nil
+	}
 
 	return fmt.Sprintf("Found %d available slots", len(resp.Slots)), nil
 }
