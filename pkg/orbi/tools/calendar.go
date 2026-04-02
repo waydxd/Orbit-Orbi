@@ -17,7 +17,7 @@ import (
 )
 
 // loadTimezone loads the specified timezone location. If the timezone is empty
-// or loading fails, it returns UTC as a fallback.
+// or loading fails, it falls back to Asia/Hong_Kong (HKT, UTC+8).
 func loadTimezone(timezone string) *time.Location {
 	defaultLoc, _ := time.LoadLocation("Asia/Hong_Kong")
 	if defaultLoc == nil {
