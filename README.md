@@ -260,7 +260,7 @@ Modify the agent configuration in `pkg/orbi/agent.go` to adjust:
 
 ## License
 
-MIT License
+AGPL-3.0
 
 ## Contributing
 
