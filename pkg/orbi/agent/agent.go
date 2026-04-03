@@ -90,12 +90,12 @@ func (a *CalendarAgent) Chat(ctx context.Context, message string) (string, error
 		return "", err
 	}
 
-	loc := time.UTC
+	loc := time.FixedZone("HKT", 8*60*60)
 	if a.cfg.Timezone != "" {
 		if parsedLoc, err := time.LoadLocation(a.cfg.Timezone); err == nil {
 			loc = parsedLoc
 		} else {
-			log.Printf("[Chat] Failed to load timezone %q, defaulting to UTC: %v", a.cfg.Timezone, err)
+			log.Printf("[Chat] Failed to load timezone %q, defaulting to HKT: %v", a.cfg.Timezone, err)
 		}
 	}
 	currentTime := time.Now().In(loc)
@@ -123,8 +123,10 @@ func (a *CalendarAgent) Chat(ctx context.Context, message string) (string, error
 	augmented := fmt.Sprintf(`Current Date and Time: %s (Timezone: %s)
 %s
 
+If user intent is to create/add/new event/task, use "create_event" even if an event with same title already exists.
+Use "update_event" when the user explicitly asks to modify/reschedule/change an existing event.
+Do not update an event just because titles are similar.
 When you are asked to update an event, you should first use the "search_events" tool to find the event's ID. Then, you can use the "update_event" tool to update the event with the correct ID.
-
 User: %s`, currentTimeStr, timezoneName, historyStr, message)
 
 	log.Printf("[Chat] Invoking LangChain agent executor for user_id=%q", userID)

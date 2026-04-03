@@ -13,7 +13,10 @@ import (
 	"github.com/waydxd/Orbit-Orbi/pkg/orbi/agent"
 	"github.com/waydxd/Orbit-Orbi/pkg/orbi/config"
 	pb "github.com/waydxd/Orbit-Orbi/proto"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func main() {
@@ -36,7 +39,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Invalid REDIS_DB value: %v", err)
 	}
-	timezone := getEnv("AGENT_TIMEZONE", "UTC")
+	timezone := getEnv("AGENT_TIMEZONE", "Asia/Hong_Kong")
 	if openAIKey == "" {
 		log.Println("Warning: OPENAI_API_KEY not set. Agent will not function without it.")
 		log.Println("If you're using Docker secrets, set OPENAI_API_KEY_FILE to the secret file path.")
@@ -63,8 +66,20 @@ func main() {
 	}
 	defer func() { _ = ag.Close() }()
 
+	// Define a custom panic handler
+	customFunc := func(p any) (err error) {
+		return status.Errorf(codes.Internal, "panic triggered: %v", p)
+	}
+
+	opts := []recovery.Option{
+		recovery.WithRecoveryHandler(customFunc),
+	}
+
 	// Create gRPC server and register services
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(recovery.UnaryServerInterceptor(opts...)),
+		grpc.StreamInterceptor(recovery.StreamServerInterceptor(opts...)),
+	)
 	agentServer := orbi.NewAgentServer(ag)
 	pb.RegisterAgentServiceServer(grpcServer, agentServer)
 

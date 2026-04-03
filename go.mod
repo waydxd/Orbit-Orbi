@@ -4,6 +4,7 @@ go 1.24.7
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.3
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.0.0
 	github.com/tmc/langchaingo v0.1.14
